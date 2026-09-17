@@ -13,13 +13,16 @@
 //    URL que te muestra la sección de Realtime Database)
 // 6. Publica firestore.rules y database.rules.json (ver README.md)
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.firebasestorage.app",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
-  databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+  apiKey: "AIzaSyDDHjFHGdDcrePHZzON417DWNcvus1BaGo",
+  authDomain: "moneypro-9dbfb.firebaseapp.com",
+  projectId: "moneypro-9dbfb",
+  storageBucket: "moneypro-9dbfb.firebasestorage.app",
+  messagingSenderId: "222242221709",
+  appId: "1:222242221709:web:4ded5a7202dd49e23b3cc4",
+  measurementId: "G-352S7Z1PTL",
+  // Verifica esta URL contra la que muestra la consola de Realtime
+  // Database al crearla (puede variar según la región elegida).
+  databaseURL: "https://moneypro-9dbfb-default-rtdb.firebaseio.com",
 };
 
 export const firebaseEnabled = firebaseConfig.apiKey !== "YOUR_API_KEY" && !!firebaseConfig.apiKey;
