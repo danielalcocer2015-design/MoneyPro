@@ -108,12 +108,15 @@
 
       <div class="settings-block shortcut-block">
         <h3>⚡ Atajo para añadir gastos sin abrir la app</h3>
-        <p class="settings-hint">Crea un botón en tu iPhone o Android que registra un gasto al instante — desde la pantalla de inicio, Siri, o un widget. No necesitas abrir MoneyPro.</p>
+        <p class="settings-hint">Crea un botón en tu iPhone o Android que registra un gasto al instante — desde la pantalla de inicio, Siri, o un widget. No necesitas abrir MoneyPro. Los gastos del atajo se ven en tus movimientos la próxima vez que abras sesión (se sincronizan solos).</p>
 
         <div class="token-row">
           <code class="token-display" id="tokenDisplay">Generando…</code>
-          <button class="chip-btn" id="copyUrlBtn">Copiar URL</button>
           <button class="chip-btn" id="regenTokenBtn" title="Genera un token nuevo e invalida el anterior">Regenerar</button>
+        </div>
+        <div class="token-row">
+          <button class="chip-btn" id="copyUrlBtn">1. Copiar URL</button>
+          <button class="chip-btn" id="copyBodyBtn">2. Copiar cuerpo JSON</button>
         </div>
         <p class="settings-hint small" id="demoTokenHint" hidden>El atajo solo funciona con una cuenta real (no en modo demostración).</p>
 
@@ -124,21 +127,22 @@
 
         <ol class="steps-list" id="iosSteps">
           <li><strong>Abre la app Atajos</strong> de Apple (viene instalada de fábrica) y toca <strong>+</strong> para crear un atajo nuevo.</li>
-          <li>Agrega la acción <strong>«Obtener contenido de URL»</strong>. Pega tu URL (botón «Copiar URL» arriba) y cambia el método a <strong>POST</strong>.</li>
-          <li>Antes de esa acción, agrega <strong>«Preguntar por texto»</strong> dos veces (para el monto y la categoría) y úsalas para completar <code>amount</code> y <code>category</code> en la URL.</li>
-          <li>Guarda el atajo con un nombre como «Agregar gasto» y agrégalo a tu pantalla de inicio o al botón de acción. Listo — un toque y el gasto queda registrado.</li>
+          <li>Agrega <strong>«Preguntar por texto»</strong> dos veces: una la vas a nombrar para el monto, otra para la categoría (ej. <code>comida</code>, <code>transporte</code>, <code>ocio</code>…).</li>
+          <li>Agrega <strong>«Obtener contenido de URL»</strong>: pega tu URL (botón «1. Copiar URL»), método <strong>POST</strong>, y en «Cuerpo de la solicitud» elige <strong>JSON</strong> y pega la plantilla (botón «2. Copiar cuerpo JSON»).</li>
+          <li>En la plantilla pegada, borra el <code>0</code> junto a <code>"amount"</code> e inserta ahí tu variable de monto (sin comillas). Borra la palabra <code>comida</code> (dejando las comillas) e inserta ahí tu variable de categoría. No toques <code>"token"</code> ni <code>"ts"</code>.</li>
+          <li>Guarda el atajo como «Agregar gasto» y agrégalo a tu pantalla de inicio, al Botón de Acción, o pídele a Siri que lo abra. Un toque y el gasto queda registrado.</li>
         </ol>
 
         <ol class="steps-list" id="androidSteps" hidden>
           <li>Instala <strong>HTTP Shortcuts</strong> (gratis, de Waboodoo) desde Play Store o F-Droid.</li>
-          <li>Crea un atajo nuevo: método <strong>POST</strong>, y pega tu URL base (botón «Copiar URL» arriba).</li>
-          <li>En «Parámetros de solicitud» agrega variables para <code>amount</code> y <code>category</code>, y márcalas como «Preguntar al ejecutar».</li>
-          <li>Coloca el atajo como widget en tu pantalla de inicio o úsalo con el asistente de voz. Un toque y el gasto queda registrado.</li>
+          <li>Crea un atajo nuevo: método <strong>POST</strong>, pega tu URL (botón «1. Copiar URL»).</li>
+          <li>En «Cuerpo de la solicitud» elige <strong>JSON personalizado</strong> y pega la plantilla (botón «2. Copiar cuerpo JSON»). Reemplaza el <code>0</code> de <code>"amount"</code> y el texto <code>comida</code> de <code>"category"</code> por variables — en HTTP Shortcuts, usa «Variable» → «Preguntar al ejecutar» e insértalas ahí.</li>
+          <li>Coloca el atajo como widget en tu pantalla de inicio. Un toque y el gasto queda registrado.</li>
         </ol>
       </div>
 
       <div class="settings-block">
-        <p class="settings-footnote">MoneyPro — hecho con Firebase. <a href="https://github.com/danielalcocer2015-design/moneypro" target="_blank" rel="noopener">Código fuente</a></p>
+        <p class="settings-footnote">MoneyPro — hecho con Firebase. <a href="https://github.com/danielalcocer2015-design/MoneyPro" target="_blank" rel="noopener">Código fuente</a></p>
       </div>
     </section>
 

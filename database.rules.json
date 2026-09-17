@@ -1,0 +1,20 @@
+{
+  "rules": {
+    "userTokens": {
+      "$uid": {
+        ".read": "auth !== null && auth.uid === $uid",
+        ".write": "auth !== null && auth.uid === $uid",
+        ".validate": "newData.isString() && newData.val().length > 10"
+      }
+    },
+    "txInbox": {
+      "$uid": {
+        ".read": "auth !== null && auth.uid === $uid",
+        "$pushId": {
+          ".write": "(auth !== null && auth.uid === $uid) || (auth === null && newData.child('token').val() !== null && newData.child('token').val() === root.child('userTokens').child($uid).val())",
+          ".validate": "newData.hasChildren(['amount', 'type', 'category', 'token']) && newData.child('amount').isNumber() && newData.child('amount').val() > 0 && (newData.child('type').val() === 'income' || newData.child('type').val() === 'expense') && newData.child('category').isString() && (newData.child('note').val() === null || newData.child('note').isString())"
+        }
+      }
+    }
+  }
+}

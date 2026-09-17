@@ -1,4 +1,4 @@
-import { firebaseConfig, firebaseEnabled, webhookBaseUrl } from './firebase-config.js';
+import { firebaseConfig, firebaseEnabled } from './firebase-config.js';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, categoriesFor, categoryInfo } from './categories.js';
 import { renderDonutChart, renderBarChart } from './charts.js';
 
@@ -21,9 +21,10 @@ const state = {
   txCategory: EXPENSE_CATEGORIES[0].id,
 };
 
-let fb = null;         // { app, auth, firestore, functions modules + instances }
+let fb = null;         // { app, auth, firestore, realtime database modules + instances }
 let unsubUser = null;
 let unsubTxs = null;
+let unsubToken = null;
 let generatingToken = false;
 
 // ---------------------------------------------------------------------
@@ -49,7 +50,7 @@ function formatMoney(amount) {
   }
 }
 function formatDateShort(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
+  const d = new Date((dateStr || todayISO()) + 'T00:00:00');
   return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
 }
 function uid() {
@@ -86,7 +87,7 @@ async function ensureFirebase() {
   const { initializeApp } = await import(`${FIREBASE_SDK}/firebase-app.js`);
   const authMod = await import(`${FIREBASE_SDK}/firebase-auth.js`);
   const fsMod = await import(`${FIREBASE_SDK}/firebase-firestore.js`);
-  const fnMod = await import(`${FIREBASE_SDK}/firebase-functions.js`);
+  const rtMod = await import(`${FIREBASE_SDK}/firebase-database.js`);
   const app = initializeApp(firebaseConfig);
   fb = {
     app,
@@ -94,8 +95,8 @@ async function ensureFirebase() {
     authInst: authMod.getAuth(app),
     fs: fsMod,
     db: fsMod.getFirestore(app),
-    fn: fnMod,
-    fnInst: fnMod.getFunctions(app),
+    rt: rtMod,
+    rtdb: rtMod.getDatabase(app),
   };
   return fb;
 }
@@ -137,8 +138,6 @@ async function startReal(user) {
   unsubUser = fb.fs.onSnapshot(userRef, (snap) => {
     const data = snap.data() || {};
     state.currency = data.currency || 'MXN';
-    state.webhookToken = data.webhookToken || null;
-    if (!data.webhookToken && !generatingToken) regenerateToken();
     renderSettings();
     renderInicio();
   });
@@ -151,27 +150,72 @@ async function startReal(user) {
     renderAll();
   }, () => showSaved(false));
 
+  unsubToken?.();
+  unsubToken = fb.rt.onValue(fb.rt.ref(fb.rtdb, `userTokens/${user.uid}`), (snap) => {
+    state.webhookToken = snap.val() || null;
+    if (!state.webhookToken && !generatingToken) regenerateToken();
+    renderSettings();
+  });
+
+  drainInbox(user.uid);
   showApp();
 }
 
 function stopReal() {
   unsubUser?.(); unsubUser = null;
   unsubTxs?.(); unsubTxs = null;
+  unsubToken?.(); unsubToken = null;
   state.user = null;
   state.txs = [];
+  state.webhookToken = null;
   if (!state.demo) hideApp();
+}
+
+function newToken() {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 async function regenerateToken() {
   if (!fb || !state.user) return;
   generatingToken = true;
   try {
-    const call = fb.fn.httpsCallable(fb.fnInst, 'regenerateToken');
-    await call();
+    await fb.rt.set(fb.rt.ref(fb.rtdb, `userTokens/${state.user.uid}`), newToken());
   } catch (err) {
     console.error(err);
   } finally {
     generatingToken = false;
+  }
+}
+
+// Los gastos que llegan por el atajo se guardan primero en un "buzón" en
+// Realtime Database (el atajo no tiene sesión, así que no puede escribir
+// directo en Firestore). Cada vez que abres sesión, se copian a
+// Firestore como movimientos normales y se limpia el buzón.
+async function drainInbox(uid) {
+  if (!fb) return;
+  try {
+    const inboxRef = fb.rt.ref(fb.rtdb, `txInbox/${uid}`);
+    const snap = await fb.rt.get(inboxRef);
+    if (!snap.exists()) return;
+    const entries = snap.val();
+    const col = fb.fs.collection(fb.db, 'users', uid, 'transactions');
+    const cleared = {};
+    for (const [key, entry] of Object.entries(entries)) {
+      cleared[key] = null;
+      const amount = Number(entry.amount);
+      if (!Number.isFinite(amount) || amount <= 0) continue;
+      const type = entry.type === 'income' ? 'income' : 'expense';
+      const validCategoryIds = categoriesFor(type).map((c) => c.id);
+      const category = validCategoryIds.includes(entry.category) ? entry.category : (type === 'income' ? 'otros_ingresos' : 'otros');
+      const date = entry.ts ? new Date(entry.ts).toISOString().slice(0, 10) : todayISO();
+      const note = typeof entry.note === 'string' ? entry.note.slice(0, 120) : '';
+      await fb.fs.addDoc(col, { amount, type, category, note, date, source: 'shortcut', createdAt: fb.fs.serverTimestamp() });
+    }
+    await fb.rt.update(inboxRef, cleared);
+  } catch (err) {
+    console.error('drainInbox failed', err);
   }
 }
 
@@ -405,9 +449,20 @@ function renderAnalisis() {
 // ---------------------------------------------------------------------
 // Render: Ajustes
 // ---------------------------------------------------------------------
-function shortcutUrl(token) {
-  const base = webhookBaseUrl.startsWith('http') ? webhookBaseUrl : `${location.origin}${webhookBaseUrl}`;
-  return `${base}/add?token=${token || 'TU_TOKEN'}`;
+function shortcutInboxUrl() {
+  const base = firebaseConfig.databaseURL || 'https://TU_PROYECTO-default-rtdb.firebaseio.com';
+  const uidPart = state.user?.uid || 'TU_UID';
+  return `${base}/txInbox/${uidPart}.json`;
+}
+function shortcutBodyTemplate(token) {
+  return JSON.stringify({
+    amount: 0,
+    type: 'expense',
+    category: 'comida',
+    note: '',
+    token: token || 'TU_TOKEN',
+    ts: { '.sv': 'timestamp' },
+  }, null, 2);
 }
 function maskToken(token) {
   if (!token) return '—';
@@ -420,11 +475,11 @@ function renderSettings() {
   $('#logoutBtn').hidden = state.demo;
   $('#demoUpgradeBtn').hidden = !state.demo;
   $('#currencySelect').value = state.currency;
-  $('#currencySelect').disabled = state.demo && false; // currency selectable in demo too (local only)
 
-  const tokenAvailable = !state.demo && state.webhookToken;
+  const tokenAvailable = !state.demo && !!state.webhookToken;
   $('#tokenDisplay').textContent = state.demo ? 'No disponible en modo demo' : maskToken(state.webhookToken);
   $('#copyUrlBtn').disabled = !tokenAvailable;
+  $('#copyBodyBtn').disabled = !tokenAvailable;
   $('#regenTokenBtn').disabled = state.demo;
   $('#demoTokenHint').hidden = !state.demo;
 }
@@ -591,7 +646,7 @@ function wireEvents() {
   });
 
   $('#copyUrlBtn').addEventListener('click', async () => {
-    const url = shortcutUrl(state.webhookToken);
+    const url = shortcutInboxUrl();
     try {
       await navigator.clipboard.writeText(url);
       showSaved(true);
@@ -599,6 +654,17 @@ function wireEvents() {
       setTimeout(() => { $('#saveLabel').textContent = 'Guardado'; }, 1800);
     } catch {
       prompt('Copia esta URL:', url);
+    }
+  });
+  $('#copyBodyBtn').addEventListener('click', async () => {
+    const body = shortcutBodyTemplate(state.webhookToken);
+    try {
+      await navigator.clipboard.writeText(body);
+      showSaved(true);
+      $('#saveLabel').textContent = 'JSON copiado';
+      setTimeout(() => { $('#saveLabel').textContent = 'Guardado'; }, 1800);
+    } catch {
+      prompt('Copia este JSON:', body);
     }
   });
   $('#regenTokenBtn').addEventListener('click', async () => {

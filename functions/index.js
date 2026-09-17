@@ -1,3 +1,14 @@
+// OPCIONAL — requiere el plan Blaze (pago por uso; gratis dentro de la
+// cuota mensual normal). No está conectado a firebase.json por defecto:
+// la app usa un atajo basado en Realtime Database que funciona en el
+// plan Spark (ver database.rules.json y public/app.js → drainInbox).
+//
+// Si más adelante subes a Blaze y quieres el webhook simple por
+// query-string (/api/add?token=...&amount=...) en vez del JSON de
+// Realtime Database, agrega de nuevo a firebase.json:
+//   "functions": [{ "source": "functions", "codebase": "default" }]
+//   y en "hosting.rewrites": { "source": "/api/**", "function": "api" }
+// luego: cd functions && npm install && cd .. && firebase deploy --only functions,hosting
 const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
