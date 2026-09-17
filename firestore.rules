@@ -1,0 +1,39 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Perfil de cada usuario. El campo webhookToken solo lo escribe el
+    // backend (Cloud Function con Admin SDK, que ignora estas reglas);
+    // el cliente puede leer/actualizar el resto de su propio perfil.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid;
+      allow update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if false;
+
+      // Movimientos (gastos/ingresos) del usuario.
+      match /transactions/{txId} {
+        allow read, delete: if request.auth != null && request.auth.uid == uid;
+
+        allow create: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.type in ['income', 'expense']
+          && request.resource.data.category is string;
+
+        allow update: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.type in ['income', 'expense'];
+      }
+    }
+
+    // Mapa token -> uid para el webhook de atajos. Solo lo toca el
+    // backend con Admin SDK; el cliente nunca lee ni escribe aquí
+    // directamente (evita que alguien enumere o adivine tokens ajenos).
+    match /webhookTokens/{token} {
+      allow read, write: if false;
+    }
+  }
+}

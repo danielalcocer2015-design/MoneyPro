@@ -1,0 +1,20 @@
+{
+  "name": "MoneyPro — Control financiero",
+  "short_name": "MoneyPro",
+  "description": "Registra gastos e ingresos en segundos, con atajos de iPhone y Android para agregar gastos sin abrir la app.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0e12",
+  "theme_color": "#0a0e12",
+  "orientation": "portrait",
+  "lang": "es-MX",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

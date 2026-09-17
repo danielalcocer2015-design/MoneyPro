@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>MoneyPro — Control financiero</title>
+<meta name="description" content="Registra tus gastos e ingresos en segundos, incluso sin abrir la app, con atajos de iPhone y Android.">
+<meta name="theme-color" content="#0A0E12">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MoneyPro">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+
+<div class="app" id="app" hidden>
+  <header class="top">
+    <div class="top-inner">
+      <div class="brand">
+        <span class="logo-dot"></span>
+        <span class="brand-name">MoneyPro</span>
+      </div>
+      <div class="header-actions">
+        <span class="demo-badge" id="demoBadge" hidden>Modo demostración</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="view-root" id="viewRoot">
+
+    <section class="view" data-view="inicio" id="viewInicio">
+      <div class="balance-card">
+        <div class="balance-label" id="balancePeriodLabel">Balance de este mes</div>
+        <div class="balance-amount" id="balanceAmount">$0.00</div>
+        <div class="balance-sub">
+          <span class="pill pill-income"><span class="pill-arrow">▲</span> Ingresos <strong id="incomeTotal">$0.00</strong></span>
+          <span class="pill pill-expense"><span class="pill-arrow">▼</span> Gastos <strong id="expenseTotal">$0.00</strong></span>
+        </div>
+      </div>
+
+      <div class="section-head">
+        <h2>Movimientos recientes</h2>
+        <button class="link-btn" data-nav="movimientos">Ver todos</button>
+      </div>
+      <div class="tx-list" id="recentTxList"></div>
+      <p class="empty-hint" id="recentEmptyHint" hidden>Aún no tienes movimientos. Toca el botón + para agregar el primero, o configura tu atajo en Ajustes.</p>
+    </section>
+
+    <section class="view" data-view="movimientos" id="viewMovimientos" hidden>
+      <div class="filters-row">
+        <select class="select-field" id="filterMonth"></select>
+        <select class="select-field" id="filterType">
+          <option value="">Todos</option>
+          <option value="expense">Gastos</option>
+          <option value="income">Ingresos</option>
+        </select>
+      </div>
+      <div class="tx-list" id="fullTxList"></div>
+      <p class="empty-hint" id="fullEmptyHint" hidden>No hay movimientos en este periodo.</p>
+    </section>
+
+    <section class="view" data-view="analisis" id="viewAnalisis" hidden>
+      <div class="chart-card viz-root">
+        <div class="chart-head">
+          <h3>Gastos por categoría</h3>
+          <select class="select-field" id="analisisMonth"></select>
+        </div>
+        <div id="donutChartWrap" class="chart-body"></div>
+      </div>
+      <div class="chart-card viz-root">
+        <h3>Ingresos vs. gastos — últimos 6 meses</h3>
+        <div id="barChartWrap" class="chart-body"></div>
+      </div>
+    </section>
+
+    <section class="view" data-view="ajustes" id="viewAjustes" hidden>
+
+      <div class="settings-block">
+        <h3>Cuenta</h3>
+        <div class="settings-row" id="accountRow">
+          <div>
+            <div class="settings-row-title" id="accountEmail">—</div>
+            <div class="settings-row-sub">Moneda</div>
+          </div>
+          <select class="select-field" id="currencySelect">
+            <option value="MXN">MXN — Peso mexicano</option>
+            <option value="USD">USD — Dólar</option>
+            <option value="EUR">EUR — Euro</option>
+          </select>
+        </div>
+        <button class="btn-secondary full" id="logoutBtn">Cerrar sesión</button>
+        <button class="btn-primary full" id="demoUpgradeBtn" hidden>Crear cuenta para guardar tus datos</button>
+      </div>
+
+      <div class="settings-block">
+        <h3>Apariencia</h3>
+        <div class="settings-row">
+          <div class="settings-row-title">Tema</div>
+          <button class="chip-btn" id="themeToggle">🌙 Oscuro</button>
+        </div>
+      </div>
+
+      <div class="settings-block shortcut-block">
+        <h3>⚡ Atajo para añadir gastos sin abrir la app</h3>
+        <p class="settings-hint">Crea un botón en tu iPhone o Android que registra un gasto al instante — desde la pantalla de inicio, Siri, o un widget. No necesitas abrir MoneyPro.</p>
+
+        <div class="token-row">
+          <code class="token-display" id="tokenDisplay">Generando…</code>
+          <button class="chip-btn" id="copyUrlBtn">Copiar URL</button>
+          <button class="chip-btn" id="regenTokenBtn" title="Genera un token nuevo e invalida el anterior">Regenerar</button>
+        </div>
+        <p class="settings-hint small" id="demoTokenHint" hidden>El atajo solo funciona con una cuenta real (no en modo demostración).</p>
+
+        <div class="tabs-mini" id="platformTabs">
+          <button class="active" data-platform="ios">iPhone</button>
+          <button data-platform="android">Android</button>
+        </div>
+
+        <ol class="steps-list" id="iosSteps">
+          <li><strong>Abre la app Atajos</strong> de Apple (viene instalada de fábrica) y toca <strong>+</strong> para crear un atajo nuevo.</li>
+          <li>Agrega la acción <strong>«Obtener contenido de URL»</strong>. Pega tu URL (botón «Copiar URL» arriba) y cambia el método a <strong>POST</strong>.</li>
+          <li>Antes de esa acción, agrega <strong>«Preguntar por texto»</strong> dos veces (para el monto y la categoría) y úsalas para completar <code>amount</code> y <code>category</code> en la URL.</li>
+          <li>Guarda el atajo con un nombre como «Agregar gasto» y agrégalo a tu pantalla de inicio o al botón de acción. Listo — un toque y el gasto queda registrado.</li>
+        </ol>
+
+        <ol class="steps-list" id="androidSteps" hidden>
+          <li>Instala <strong>HTTP Shortcuts</strong> (gratis, de Waboodoo) desde Play Store o F-Droid.</li>
+          <li>Crea un atajo nuevo: método <strong>POST</strong>, y pega tu URL base (botón «Copiar URL» arriba).</li>
+          <li>En «Parámetros de solicitud» agrega variables para <code>amount</code> y <code>category</code>, y márcalas como «Preguntar al ejecutar».</li>
+          <li>Coloca el atajo como widget en tu pantalla de inicio o úsalo con el asistente de voz. Un toque y el gasto queda registrado.</li>
+        </ol>
+      </div>
+
+      <div class="settings-block">
+        <p class="settings-footnote">MoneyPro — hecho con Firebase. <a href="https://github.com/danielalcocer2015-design/moneypro" target="_blank" rel="noopener">Código fuente</a></p>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="nav-tabs" id="navTabs">
+    <button class="active" data-view="inicio"><span class="nav-icon">🏠</span>Inicio</button>
+    <button data-view="movimientos"><span class="nav-icon">📋</span>Movimientos</button>
+    <button data-view="analisis"><span class="nav-icon">📊</span>Análisis</button>
+    <button data-view="ajustes"><span class="nav-icon">⚙️</span>Ajustes</button>
+  </nav>
+
+  <button class="fab" id="addFab" title="Nuevo movimiento">+</button>
+</div>
+
+<div class="modal-overlay login-overlay" id="loginOverlay">
+  <div class="login-brand">
+    <span class="logo-dot big"></span>
+    <div class="login-title">MoneyPro</div>
+    <div class="sub">Control financiero personal, con atajos para iPhone y Android</div>
+  </div>
+  <div class="modal">
+    <div class="auth-tabs" id="authTabs">
+      <button class="active" data-mode="login">Entrar</button>
+      <button data-mode="signup">Crear cuenta</button>
+    </div>
+    <form id="authForm">
+      <div class="field">
+        <label for="authEmail">Correo</label>
+        <input type="email" id="authEmail" placeholder="tu@correo.com" required autocomplete="email">
+      </div>
+      <div class="field">
+        <label for="authPassword">Contraseña</label>
+        <input type="password" id="authPassword" placeholder="Mínimo 6 caracteres" required minlength="6" autocomplete="current-password">
+      </div>
+      <p class="form-error" id="authError" hidden></p>
+      <button type="submit" class="btn-primary full" id="authSubmit">Entrar</button>
+    </form>
+    <button class="link-btn full" id="demoBtn">Explorar en modo demostración →</button>
+    <p class="settings-hint small" id="firebaseDisabledHint" hidden>Este despliegue no tiene Firebase configurado todavía, así que solo está disponible el modo demostración. Revisa el README para activar cuentas reales.</p>
+  </div>
+</div>
+
+<div class="modal-overlay" id="txModalOverlay">
+  <div class="modal">
+    <h4 id="txModalTitle">Nuevo movimiento</h4>
+    <div class="type-toggle" id="txTypeToggle">
+      <button type="button" class="active" data-type="expense">Gasto</button>
+      <button type="button" data-type="income">Ingreso</button>
+    </div>
+    <div class="field">
+      <label for="txAmount">Monto</label>
+      <input type="number" id="txAmount" inputmode="decimal" step="0.01" min="0.01" placeholder="0.00">
+    </div>
+    <div class="field">
+      <label>Categoría</label>
+      <div class="category-grid" id="txCategoryGrid"></div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label for="txDate">Fecha</label>
+        <input type="date" id="txDate">
+      </div>
+    </div>
+    <div class="field">
+      <label for="txNote">Nota (opcional)</label>
+      <input type="text" id="txNote" maxlength="120" placeholder="Ej. Café con el equipo">
+    </div>
+    <p class="form-error" id="txError" hidden></p>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="txCancel">Cancelar</button>
+      <button class="btn-primary" id="txSave">Guardar</button>
+    </div>
+    <button class="reset-link" id="txDelete" hidden>Eliminar movimiento</button>
+  </div>
+</div>
+
+<div class="save-indicator" id="saveIndicator"><div class="save-dot"></div><span id="saveLabel">Guardado</span></div>
+
+<script type="module" src="app.js?v=1"></script>
+</body>
+</html>
