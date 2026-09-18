@@ -606,12 +606,6 @@ function shortcutBodyTemplate(token) {
     ts: { '.sv': 'timestamp' },
   }, null, 2);
 }
-function maskToken(token) {
-  if (!token) return '—';
-  if (token.length <= 10) return token;
-  return `${token.slice(0, 6)}…${token.slice(-4)}`;
-}
-
 function renderSettings() {
   $('#accountEmail').textContent = state.demo ? 'Modo demostración' : (state.user?.email || '—');
   $('#logoutBtn').hidden = state.demo;
@@ -619,7 +613,11 @@ function renderSettings() {
   $('#currencySelect').value = state.currency;
 
   const tokenAvailable = !state.demo && !!state.webhookToken;
-  $('#tokenDisplay').textContent = state.demo ? 'No disponible en modo demo' : maskToken(state.webhookToken);
+  // Token completo (sin enmascarar): hay que poder copiarlo tal cual para
+  // pegarlo a mano en el campo "token" del atajo — una versión recortada
+  // ahí rompe silenciosamente la escritura (no coincide con el real).
+  $('#tokenDisplay').textContent = state.demo ? 'No disponible en modo demo' : (state.webhookToken || 'Generando…');
+  $('#copyTokenBtn').disabled = !tokenAvailable;
   $('#copyCatUrlBtn').disabled = !tokenAvailable;
   $('#copyUrlBtn').disabled = !tokenAvailable;
   $('#copyBodyBtn').disabled = !tokenAvailable;
@@ -912,6 +910,17 @@ function wireEvents() {
     renderAll();
   });
 
+  $('#copyTokenBtn').addEventListener('click', async () => {
+    const token = state.webhookToken || '';
+    try {
+      await navigator.clipboard.writeText(token);
+      showSaved(true);
+      $('#saveLabel').textContent = 'Token copiado';
+      setTimeout(() => { $('#saveLabel').textContent = 'Guardado'; }, 1800);
+    } catch {
+      prompt('Copia este token:', token);
+    }
+  });
   $('#copyCatUrlBtn').addEventListener('click', async () => {
     const url = shortcutCatListUrl('expense');
     try {
