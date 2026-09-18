@@ -181,6 +181,27 @@ a { color: var(--accent); }
 .steps-list li strong { color: var(--text-primary); }
 .steps-list code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
 
+/* ---------- Categorías (admin) ---------- */
+.cat-type-head { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 4px; }
+.cat-list { display: flex; flex-direction: column; gap: 8px; }
+.cat-row { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.cat-row-head { display: flex; align-items: center; gap: 8px; }
+.cat-emoji-btn { font-size: 18px; background: none; border: none; cursor: pointer; padding: 4px; line-height: 1; flex-shrink: 0; }
+.cat-label-input { flex: 1; background: transparent; border: none; color: var(--text-primary); font-weight: 700; font-size: 14px; padding: 6px 4px; min-width: 0; }
+.cat-label-input:focus { outline: none; border-bottom: 1px solid var(--accent); }
+.cat-del-btn { background: none; border: none; color: var(--text-muted); font-size: 16px; cursor: pointer; padding: 4px 6px; flex-shrink: 0; }
+.cat-del-btn:hover { color: var(--danger); }
+.cat-subs { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 30px; }
+.sub-chip { display: inline-flex; align-items: center; gap: 5px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 100px; padding: 4px 6px 4px 10px; font-size: 12px; color: var(--text-secondary); }
+.sub-chip button { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 2px; }
+.sub-chip button:hover { color: var(--danger); }
+.sub-add-input { background: var(--surface-1); border: 1px dashed var(--border); border-radius: 100px; padding: 4px 10px; font-size: 12px; color: var(--text-primary); width: 110px; }
+.emoji-picker { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; margin-top: -4px; }
+.emoji-picker button { font-size: 18px; background: none; border: none; cursor: pointer; padding: 4px; border-radius: 8px; }
+.emoji-picker button:hover { background: var(--surface-2); }
+.cat-add-row { display: flex; gap: 8px; }
+.cat-add-input { flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; color: var(--text-primary); font-size: 13.5px; min-width: 0; }
+
 /* ---------- Buttons ---------- */
 .btn-primary { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 12px; padding: 13px 18px; font-weight: 800; font-size: 14.5px; cursor: pointer; }
 .btn-secondary { background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); border-radius: 12px; padding: 13px 18px; font-weight: 700; font-size: 14.5px; cursor: pointer; }

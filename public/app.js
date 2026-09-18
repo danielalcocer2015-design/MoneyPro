@@ -1,5 +1,5 @@
 import { firebaseConfig, firebaseEnabled } from './firebase-config.js';
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, categoriesFor, categoryInfo } from './categories.js';
+import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES, FALLBACK_ID, defaultCategoryDoc, slugify, findCategory } from './categories.js';
 import { renderDonutChart, renderBarChart } from './charts.js';
 
 const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/10.13.0';
@@ -11,21 +11,33 @@ const state = {
   user: null,
   currency: 'MXN',
   webhookToken: null,
-  txs: [],           // { id, amount, type, category, note, date, source }
+  categories: defaultCategoryDoc(), // { expense: [...], income: [...] } — personalizable por usuario
+  txs: [],           // { id, amount, type, category, subcategory, note, date, source }
   view: 'inicio',
   filterMonth: '',
   filterType: '',
   analisisMonth: '',
   editingTxId: null,
   txType: 'expense',
-  txCategory: EXPENSE_CATEGORIES[0].id,
+  txCategory: DEFAULT_EXPENSE_CATEGORIES[0].id,
+  txSubcategory: '',
 };
 
 let fb = null;         // { app, auth, firestore, realtime database modules + instances }
 let unsubUser = null;
 let unsubTxs = null;
 let unsubToken = null;
+let unsubCategories = null;
 let generatingToken = false;
+
+// Categorías/subcategorías: leen de state.categories (personalizables),
+// con las de categories.js solo como semilla inicial (ver defaultCategoryDoc).
+function categoriesFor(type) {
+  return state.categories[type === 'income' ? 'income' : 'expense'];
+}
+function categoryInfo(type, id) {
+  return findCategory(categoriesFor(type), id) || { id, label: id || 'Otros', icon: '🔧', subcategories: [] };
+}
 
 // ---------------------------------------------------------------------
 // Utilidades
@@ -119,6 +131,7 @@ async function signUp(email, password) {
   await fb.fs.setDoc(fb.fs.doc(fb.db, 'users', cred.user.uid), {
     email, currency: 'MXN', createdAt: fb.fs.serverTimestamp(),
   }, { merge: true });
+  await fb.fs.setDoc(fb.fs.doc(fb.db, 'users', cred.user.uid, 'meta', 'categories'), defaultCategoryDoc());
 }
 async function signOutUser() {
   await ensureFirebase();
@@ -150,10 +163,20 @@ async function startReal(user) {
     renderAll();
   }, () => showSaved(false));
 
+  const catRef = fb.fs.doc(fb.db, 'users', user.uid, 'meta', 'categories');
+  unsubCategories?.();
+  unsubCategories = fb.fs.onSnapshot(catRef, (snap) => {
+    const data = snap.data();
+    state.categories = (data && data.expense && data.income) ? data : defaultCategoryDoc();
+    syncCatListToRtdb();
+    renderAll();
+  });
+
   unsubToken?.();
   unsubToken = fb.rt.onValue(fb.rt.ref(fb.rtdb, `userTokens/${user.uid}`), (snap) => {
     state.webhookToken = snap.val() || null;
     if (!state.webhookToken && !generatingToken) regenerateToken();
+    else syncCatListToRtdb();
     renderSettings();
   });
 
@@ -165,6 +188,7 @@ function stopReal() {
   unsubUser?.(); unsubUser = null;
   unsubTxs?.(); unsubTxs = null;
   unsubToken?.(); unsubToken = null;
+  unsubCategories?.(); unsubCategories = null;
   state.user = null;
   state.txs = [];
   state.webhookToken = null;
@@ -174,8 +198,9 @@ function stopReal() {
 // Tolera mayúsculas, espacios y acentos ("Comida", " COMIDA ", "Inversión")
 // al hacer coincidir la categoría que llega del atajo con las categorías
 // internas de la app (ver categories.js).
+const COMBINING_MARKS_RE = new RegExp(String.fromCharCode(0x5b) + String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f) + String.fromCharCode(0x5d), 'g');
 function normalizeCategoryInput(str) {
-  return (str || '').toString().trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  return (str || '').toString().trim().toLowerCase().normalize('NFD').replace(COMBINING_MARKS_RE, '');
 }
 
 function newToken() {
@@ -188,12 +213,31 @@ async function regenerateToken() {
   if (!fb || !state.user) return;
   generatingToken = true;
   try {
-    await fb.rt.set(fb.rt.ref(fb.rtdb, `userTokens/${state.user.uid}`), newToken());
+    const oldToken = state.webhookToken;
+    const token = newToken();
+    await fb.rt.set(fb.rt.ref(fb.rtdb, `userTokens/${state.user.uid}`), token);
+    await syncCatListToRtdb(token);
+    if (oldToken && oldToken !== token) {
+      fb.rt.remove(fb.rt.ref(fb.rtdb, `catList/${oldToken}`)).catch(() => {});
+    }
   } catch (err) {
     console.error(err);
   } finally {
     generatingToken = false;
   }
+}
+
+// Copia los nombres de categorías (públicos solo para quien conoce el
+// token) a Realtime Database, para que el atajo pueda consultarlos en
+// vivo antes de mostrar el menú — ver database.rules.json → catList.
+function syncCatListToRtdb(tokenOverride) {
+  const token = tokenOverride || state.webhookToken;
+  if (!fb || state.demo || !state.user || !token) return Promise.resolve();
+  const payload = {
+    expense: state.categories.expense.map((c) => c.label),
+    income: state.categories.income.map((c) => c.label),
+  };
+  return fb.rt.set(fb.rt.ref(fb.rtdb, `catList/${token}`), payload).catch((err) => console.error('syncCatListToRtdb failed', err));
 }
 
 // Los gastos que llegan por el atajo se guardan primero en un "buzón" en
@@ -214,9 +258,10 @@ async function drainInbox(uid) {
       const amount = Number(entry.amount);
       if (!Number.isFinite(amount) || amount <= 0) continue;
       const type = entry.type === 'income' ? 'income' : 'expense';
-      const validCategoryIds = categoriesFor(type).map((c) => c.id);
-      const normalizedCategory = normalizeCategoryInput(entry.category);
-      const category = validCategoryIds.includes(normalizedCategory) ? normalizedCategory : (type === 'income' ? 'otros_ingresos' : 'otros');
+      const list = categoriesFor(type);
+      const normalizedInput = normalizeCategoryInput(entry.category);
+      const matched = list.find((c) => c.id === normalizedInput || normalizeCategoryInput(c.label) === normalizedInput);
+      const category = matched ? matched.id : FALLBACK_ID[type];
       const date = entry.ts ? new Date(entry.ts).toISOString().slice(0, 10) : todayISO();
       const note = typeof entry.note === 'string' ? entry.note.slice(0, 120) : '';
       await fb.fs.addDoc(col, { amount, type, category, note, date, source: 'shortcut', createdAt: fb.fs.serverTimestamp() });
@@ -258,10 +303,21 @@ function seedDemoData() {
   saveDemoTxs(withIds);
   return withIds;
 }
+function demoCategories() {
+  const raw = localStorage.getItem('moneypro_demo_categories');
+  if (!raw) return defaultCategoryDoc();
+  try {
+    const parsed = JSON.parse(raw);
+    return (parsed && parsed.expense && parsed.income) ? parsed : defaultCategoryDoc();
+  } catch {
+    return defaultCategoryDoc();
+  }
+}
 function startDemo() {
   state.demo = true;
   state.user = null;
   state.currency = localStorage.getItem('moneypro_demo_currency') || 'MXN';
+  state.categories = demoCategories();
   let txs = demoTxs();
   if (!txs.length) txs = seedDemoData();
   state.txs = txs;
@@ -321,6 +377,77 @@ async function deleteTransaction(id) {
 }
 
 // ---------------------------------------------------------------------
+// CRUD de categorías/subcategorías (rama demo o real)
+// ---------------------------------------------------------------------
+function currentCategoryList(type) {
+  return state.categories[type === 'income' ? 'income' : 'expense'];
+}
+
+async function persistCategories(newCategories) {
+  state.categories = newCategories;
+  if (state.demo) {
+    localStorage.setItem('moneypro_demo_categories', JSON.stringify(newCategories));
+  } else if (fb && state.user) {
+    await fb.fs.setDoc(fb.fs.doc(fb.db, 'users', state.user.uid, 'meta', 'categories'), newCategories);
+    await syncCatListToRtdb();
+  }
+  renderCategoriesAdmin();
+  renderAll();
+}
+
+async function addCategory(type, label) {
+  const trimmed = (label || '').trim();
+  if (!trimmed) return;
+  const list = currentCategoryList(type);
+  const id = slugify(trimmed);
+  if (list.some((c) => c.id === id)) { alert('Ya existe una categoría con ese nombre.'); return; }
+  const updated = { ...state.categories, [type]: [...list, { id, label: trimmed, icon: '🔧', subcategories: [] }] };
+  await persistCategories(updated);
+}
+
+async function deleteCategory(type, id) {
+  if (id === FALLBACK_ID[type]) { alert('Esta es la categoría de respaldo y no se puede eliminar.'); return; }
+  const list = currentCategoryList(type);
+  if (list.length <= 1) { alert('Debe quedar al menos una categoría.'); return; }
+  if (!confirm('¿Eliminar esta categoría? Tus movimientos existentes con esta categoría no se borran.')) return;
+  const updated = { ...state.categories, [type]: list.filter((c) => c.id !== id) };
+  await persistCategories(updated);
+}
+
+async function renameCategory(type, id, newLabel) {
+  const trimmed = (newLabel || '').trim();
+  if (!trimmed) return;
+  const list = currentCategoryList(type);
+  const updated = { ...state.categories, [type]: list.map((c) => (c.id === id ? { ...c, label: trimmed } : c)) };
+  await persistCategories(updated);
+}
+
+async function addSubcategory(type, categoryId, label) {
+  const trimmed = (label || '').trim();
+  if (!trimmed) return;
+  const list = currentCategoryList(type);
+  const updated = {
+    ...state.categories,
+    [type]: list.map((c) => {
+      if (c.id !== categoryId) return c;
+      const subId = slugify(trimmed);
+      if ((c.subcategories || []).some((s) => s.id === subId)) return c;
+      return { ...c, subcategories: [...(c.subcategories || []), { id: subId, label: trimmed }] };
+    }),
+  };
+  await persistCategories(updated);
+}
+
+async function deleteSubcategory(type, categoryId, subId) {
+  const list = currentCategoryList(type);
+  const updated = {
+    ...state.categories,
+    [type]: list.map((c) => (c.id === categoryId ? { ...c, subcategories: (c.subcategories || []).filter((s) => s.id !== subId) } : c)),
+  };
+  await persistCategories(updated);
+}
+
+// ---------------------------------------------------------------------
 // Navegación / visibilidad de la app
 // ---------------------------------------------------------------------
 function showApp() {
@@ -358,12 +485,14 @@ function totalsForMonth(key) {
 
 function renderTxRow(t) {
   const info = categoryInfo(t.type, t.category);
+  const sub = t.subcategory ? (info.subcategories || []).find((s) => s.id === t.subcategory) : null;
+  const catLabel = sub ? `${info.label} · ${sub.label}` : info.label;
   const row = document.createElement('div');
   row.className = 'tx-row';
   row.innerHTML = `
     <div class="tx-icon">${info.icon}</div>
     <div class="tx-info">
-      <div class="tx-cat">${info.label}</div>
+      <div class="tx-cat">${escapeHtml(catLabel)}</div>
       <div class="tx-meta">${formatDateShort(t.date)}${t.note ? ' · ' + escapeHtml(t.note) : ''}${t.source === 'shortcut' ? ' · ⚡ atajo' : ''}</div>
     </div>
     <div class="tx-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${formatMoney(t.amount)}</div>
@@ -434,7 +563,7 @@ function renderAnalisis() {
     if (t.type !== 'expense' || monthKey(t.date) !== state.analisisMonth) continue;
     byCat[t.category] = (byCat[t.category] || 0) + t.amount;
   }
-  const donutData = EXPENSE_CATEGORIES
+  const donutData = categoriesFor('expense')
     .map((c, i) => ({ id: c.id, label: c.label, icon: c.icon, value: byCat[c.id] || 0, seriesIndex: i }))
     .filter((d) => d.value > 0)
     .sort((a, b) => b.value - a.value);
@@ -462,6 +591,11 @@ function shortcutInboxUrl() {
   const uidPart = state.user?.uid || 'TU_UID';
   return `${base}/txInbox/${uidPart}.json`;
 }
+function shortcutCatListUrl(type = 'expense') {
+  const base = firebaseConfig.databaseURL || 'https://TU_PROYECTO-default-rtdb.firebaseio.com';
+  const tokenPart = state.webhookToken || 'TU_TOKEN';
+  return `${base}/catList/${tokenPart}/${type}.json`;
+}
 function shortcutBodyTemplate(token) {
   return JSON.stringify({
     amount: 0,
@@ -486,10 +620,107 @@ function renderSettings() {
 
   const tokenAvailable = !state.demo && !!state.webhookToken;
   $('#tokenDisplay').textContent = state.demo ? 'No disponible en modo demo' : maskToken(state.webhookToken);
+  $('#copyCatUrlBtn').disabled = !tokenAvailable;
   $('#copyUrlBtn').disabled = !tokenAvailable;
   $('#copyBodyBtn').disabled = !tokenAvailable;
   $('#regenTokenBtn').disabled = state.demo;
   $('#demoTokenHint').hidden = !state.demo;
+
+  renderCategoriesAdmin();
+}
+
+const EMOJI_PRESET = ['🍔', '🚗', '🏠', '🎬', '💊', '💡', '🛍️', '📚', '✈️', '🎁', '💼', '💻', '📈', '⛽', '🔧', '💰', '🐾', '🏋️', '🎮', '☕'];
+
+function closeEmojiPicker() {
+  $('.emoji-picker')?.remove();
+}
+
+function renderCategoryRow(type, cat) {
+  const row = document.createElement('div');
+  row.className = 'cat-row';
+
+  const head = document.createElement('div');
+  head.className = 'cat-row-head';
+
+  const emojiBtn = document.createElement('button');
+  emojiBtn.type = 'button';
+  emojiBtn.className = 'cat-emoji-btn';
+  emojiBtn.textContent = cat.icon;
+  emojiBtn.title = 'Cambiar ícono';
+  emojiBtn.addEventListener('click', () => {
+    const existing = row.querySelector('.emoji-picker');
+    closeEmojiPicker();
+    if (existing) return; // ya estaba abierto: solo lo cerramos
+    const picker = document.createElement('div');
+    picker.className = 'emoji-picker';
+    EMOJI_PRESET.forEach((emoji) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = emoji;
+      b.addEventListener('click', async () => {
+        closeEmojiPicker();
+        const list = currentCategoryList(type);
+        const updated = { ...state.categories, [type]: list.map((c) => (c.id === cat.id ? { ...c, icon: emoji } : c)) };
+        await persistCategories(updated);
+      });
+      picker.appendChild(b);
+    });
+    row.appendChild(picker);
+  });
+
+  const labelInput = document.createElement('input');
+  labelInput.className = 'cat-label-input';
+  labelInput.value = cat.label;
+  labelInput.maxLength = 30;
+  labelInput.addEventListener('change', () => renameCategory(type, cat.id, labelInput.value));
+
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.className = 'cat-del-btn';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Eliminar categoría';
+  delBtn.addEventListener('click', () => deleteCategory(type, cat.id));
+
+  head.append(emojiBtn, labelInput, delBtn);
+  row.appendChild(head);
+
+  const subs = document.createElement('div');
+  subs.className = 'cat-subs';
+  (cat.subcategories || []).forEach((sub) => {
+    const chip = document.createElement('span');
+    chip.className = 'sub-chip';
+    chip.innerHTML = `${escapeHtml(sub.label)} `;
+    const delSub = document.createElement('button');
+    delSub.type = 'button';
+    delSub.textContent = '✕';
+    delSub.addEventListener('click', () => deleteSubcategory(type, cat.id, sub.id));
+    chip.appendChild(delSub);
+    subs.appendChild(chip);
+  });
+  const subInput = document.createElement('input');
+  subInput.className = 'sub-add-input';
+  subInput.placeholder = '+ subcategoría';
+  subInput.maxLength = 30;
+  subInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && subInput.value.trim()) {
+      addSubcategory(type, cat.id, subInput.value);
+      subInput.value = '';
+    }
+  });
+  subs.appendChild(subInput);
+  row.appendChild(subs);
+
+  return row;
+}
+
+function renderCategoriesAdmin() {
+  const expenseList = $('#expenseCatList');
+  const incomeList = $('#incomeCatList');
+  if (!expenseList || !incomeList) return;
+  expenseList.innerHTML = '';
+  incomeList.innerHTML = '';
+  categoriesFor('expense').forEach((c) => expenseList.appendChild(renderCategoryRow('expense', c)));
+  categoriesFor('income').forEach((c) => incomeList.appendChild(renderCategoryRow('income', c)));
 }
 
 // ---------------------------------------------------------------------
@@ -505,8 +736,32 @@ function buildCategoryGrid() {
     chip.innerHTML = `<span class="cat-emoji">${c.icon}</span><span class="cat-label">${c.label}</span>`;
     chip.addEventListener('click', () => {
       state.txCategory = c.id;
+      state.txSubcategory = '';
       $$('.category-chip', grid).forEach((el) => el.classList.remove('active'));
       chip.classList.add('active');
+      buildSubcategoryGrid();
+    });
+    grid.appendChild(chip);
+  });
+}
+
+function buildSubcategoryGrid() {
+  const field = $('#txSubcategoryField');
+  const grid = $('#txSubcategoryGrid');
+  const cat = categoryInfo(state.txType, state.txCategory);
+  const subs = cat?.subcategories || [];
+  grid.innerHTML = '';
+  field.hidden = subs.length === 0;
+  if (subs.length === 0) { state.txSubcategory = ''; return; }
+  subs.forEach((s) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'category-chip' + (s.id === state.txSubcategory ? ' active' : '');
+    chip.innerHTML = `<span class="cat-label">${s.label}</span>`;
+    chip.addEventListener('click', () => {
+      state.txSubcategory = state.txSubcategory === s.id ? '' : s.id;
+      $$('.category-chip', grid).forEach((el) => el.classList.remove('active'));
+      if (state.txSubcategory) chip.classList.add('active');
     });
     grid.appendChild(chip);
   });
@@ -516,6 +771,7 @@ function openTxModal(tx = null) {
   state.editingTxId = tx?.id || null;
   state.txType = tx?.type || 'expense';
   state.txCategory = tx?.category || categoriesFor(state.txType)[0].id;
+  state.txSubcategory = tx?.subcategory || '';
 
   $('#txModalTitle').textContent = tx ? 'Editar movimiento' : 'Nuevo movimiento';
   $('#txAmount').value = tx ? tx.amount : '';
@@ -525,6 +781,7 @@ function openTxModal(tx = null) {
   $('#txDelete').hidden = !tx;
   $$('#txTypeToggle button').forEach((b) => b.classList.toggle('active', b.dataset.type === state.txType));
   buildCategoryGrid();
+  buildSubcategoryGrid();
   $('#txModalOverlay').classList.add('open');
 }
 function closeTxModal() {
@@ -541,7 +798,7 @@ async function handleTxSave() {
   const date = $('#txDate').value || todayISO();
   const note = $('#txNote').value.trim().slice(0, 120);
   try {
-    await saveTransaction({ amount, type: state.txType, category: state.txCategory, date, note });
+    await saveTransaction({ amount, type: state.txType, category: state.txCategory, subcategory: state.txSubcategory || '', date, note });
     closeTxModal();
   } catch {
     $('#txError').textContent = 'No se pudo guardar. Intenta de nuevo.';
@@ -613,9 +870,11 @@ function wireEvents() {
   $$('#txTypeToggle button').forEach((b) => b.addEventListener('click', () => {
     state.txType = b.dataset.type;
     state.txCategory = categoriesFor(state.txType)[0].id;
+    state.txSubcategory = '';
     $$('#txTypeToggle button').forEach((x) => x.classList.remove('active'));
     b.classList.add('active');
     buildCategoryGrid();
+    buildSubcategoryGrid();
   }));
 
   $('#filterMonth').addEventListener('change', (e) => { state.filterMonth = e.target.value; renderMovimientos(); });
@@ -653,6 +912,17 @@ function wireEvents() {
     renderAll();
   });
 
+  $('#copyCatUrlBtn').addEventListener('click', async () => {
+    const url = shortcutCatListUrl('expense');
+    try {
+      await navigator.clipboard.writeText(url);
+      showSaved(true);
+      $('#saveLabel').textContent = 'URL de categorías copiada';
+      setTimeout(() => { $('#saveLabel').textContent = 'Guardado'; }, 1800);
+    } catch {
+      prompt('Copia esta URL:', url);
+    }
+  });
   $('#copyUrlBtn').addEventListener('click', async () => {
     const url = shortcutInboxUrl();
     try {
@@ -680,6 +950,17 @@ function wireEvents() {
     if (!confirm('El atajo actual dejará de funcionar hasta que actualices la URL. ¿Continuar?')) return;
     await regenerateToken();
   });
+
+  $('#expenseCatAddBtn').addEventListener('click', () => {
+    addCategory('expense', $('#expenseCatInput').value);
+    $('#expenseCatInput').value = '';
+  });
+  $('#expenseCatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#expenseCatAddBtn').click(); });
+  $('#incomeCatAddBtn').addEventListener('click', () => {
+    addCategory('income', $('#incomeCatInput').value);
+    $('#incomeCatInput').value = '';
+  });
+  $('#incomeCatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#incomeCatAddBtn').click(); });
 
   $$('#platformTabs button').forEach((b) => b.addEventListener('click', () => {
     $$('#platformTabs button').forEach((x) => x.classList.remove('active'));

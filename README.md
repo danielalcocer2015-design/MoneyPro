@@ -15,14 +15,18 @@ Firestore, y Realtime Database para el atajo). Funciona completo en el
 - **Movimientos**: historial completo con filtros por mes y tipo, alta/edición/borrado.
 - **Análisis**: gráfica de gastos por categoría (mes seleccionable) y comparativa
   de ingresos vs. gastos de los últimos 6 meses.
-- **Ajustes**: cuenta, moneda (MXN/USD/EUR), tema claro/oscuro, y la
-  configuración del atajo (URL + plantilla JSON + token, instrucciones paso
-  a paso para iPhone y Android).
+- **Categorías personalizadas**: agrega, renombra o borra tus propias
+  categorías y subcategorías (Ajustes → Categorías) — no vienen fijas en el
+  código, cada cuenta tiene las suyas.
+- **Ajustes**: cuenta, moneda (MXN/USD/EUR), tema claro/oscuro, categorías,
+  y la configuración del atajo (URLs + plantilla JSON + token, instrucciones
+  paso a paso para iPhone y Android).
 - **Modo demostración**: explora la app con datos de ejemplo sin crear cuenta
   (guardado solo en este navegador; el atajo no está disponible en este modo).
 - **Atajo de iPhone/Android**: cada cuenta tiene un token privado. El atajo
-  hace un POST con JSON a tu Realtime Database desde la app Atajos de Apple,
-  Siri, un widget, o "HTTP Shortcuts" en Android — sin abrir MoneyPro.
+  primero consulta tus categorías en vivo (GET) y luego hace un POST con
+  JSON a tu Realtime Database — desde Atajos de Apple, Siri, un widget, o
+  "HTTP Shortcuts" en Android — sin abrir MoneyPro.
 
 ## Cómo funciona el atajo (sin Cloud Functions)
 
@@ -44,6 +48,13 @@ En su lugar:
 El token (24 caracteres, aleatorio) se genera y regenera desde **Ajustes**,
 y solo tú puedes leerlo o cambiarlo (`database.rules.json` lo protege por
 `uid`).
+
+Las categorías viven en Firestore (`users/{uid}/meta/categories`, editables
+desde Ajustes → Categorías) y se copian — solo los nombres, gateados por el
+mismo token — a `catList/TU_TOKEN` en Realtime Database cada vez que
+cambian. El atajo hace un `GET` a esa ruta antes de mostrar el menú de
+categorías, así siempre ve la lista actual sin que tengas que editar el
+atajo cuando agregas una nueva.
 
 > **¿Prefieres un webhook con URL simple (`/api/add?amount=...`) y que el
 > gasto aparezca al instante sin abrir la app?** Eso requiere Cloud
@@ -100,8 +111,9 @@ desplegado en Firebase Hosting:
 
 ## Configurar el atajo
 
-En **Ajustes → ⚡ Atajo**, primero copia tu **URL** y tu **plantilla JSON**
-(dos botones). La plantilla se ve así:
+En **Ajustes → ⚡ Atajo** hay tres botones: **1. Copiar URL de categorías**
+(GET, para el menú en vivo), **2. Copiar URL para guardar** (POST, guarda el
+gasto), y **3. Copiar cuerpo JSON** (la plantilla del paso 2):
 
 ```json
 {
@@ -120,27 +132,32 @@ tocar las comillas) — todo lo demás se queda igual.
 ### iPhone (Atajos de Apple)
 
 1. Abre la app **Atajos** → **+** para crear uno nuevo.
-2. Agrega **«Preguntar por texto»** dos veces (monto y categoría).
-3. Agrega **«Obtener contenido de URL»**: pega tu URL, método **POST**,
-   cuerpo de la solicitud tipo **JSON**, pega la plantilla.
-4. En la plantilla pegada: borra el `0` de `"amount"` e inserta ahí (sin
-   comillas) la variable del monto; borra `comida` (dejando las comillas)
-   e inserta ahí la variable de categoría.
-5. Guarda el atajo y agrégalo a tu pantalla de inicio, al Botón de Acción,
+2. Agrega **«Obtener contenido de URL»** con la URL del botón 1 (GET, sin
+   tocar método ni cuerpo) — consulta tus categorías en vivo.
+3. Agrega **«Elegir de la lista»**: en el campo Lista, usa la variable
+   «Contenido de URL» del paso anterior en vez de escribir opciones a mano.
+4. Agrega **«Preguntar por texto»** (para el monto).
+5. Agrega otra **«Obtener contenido de URL»** con la URL del botón 2,
+   método **POST**, cuerpo tipo **JSON**, con los campos `amount` (tipo
+   Número, variable del monto), `type` (`expense`), `category` (variable
+   «Elemento elegido» del paso 3) y `token` (tu token).
+6. Guarda el atajo y agrégalo a tu pantalla de inicio, al Botón de Acción,
    o invócalo con Siri.
 
 ### Android (HTTP Shortcuts)
 
 1. Instala **HTTP Shortcuts** (Waboodoo) desde Play Store o F-Droid.
-2. Crea un atajo: método **POST**, pega tu URL, cuerpo tipo **JSON personalizado**,
-   pega la plantilla.
-3. Reemplaza `0` y `comida` por variables (Insertar → Variable → Preguntar
-   al ejecutar).
-4. Colócalo como widget en tu pantalla de inicio.
+2. Si tu versión permite variables tipo Selección con opciones cargadas
+   desde una petición HTTP, apúntala a la URL del botón 1 (GET). Si no,
+   escribe las opciones a mano — deben coincidir con tus categorías
+   actuales (revísalas en Ajustes → Categorías).
+3. Crea el atajo: método **POST**, URL del botón 2, cuerpo tipo **JSON
+   personalizado**, pega la plantilla del botón 3.
+4. Reemplaza `0` por tu variable Número, y `comida` por tu variable Selección.
+5. Colócalo como widget en tu pantalla de inicio.
 
-Categorías válidas — gastos: `comida`, `transporte`, `vivienda`, `ocio`,
-`salud`, `servicios`, `compras`, `otros`. Ingresos (con `"type": "income"`):
-`salario`, `freelance`, `inversion`, `regalo`, `otros_ingresos`.
+Las categorías son las que tú definas en Ajustes → Categorías (no vienen
+fijas) — el respaldo si algo no coincide es siempre "Otros" / "Otros ingresos".
 
 ## Actualizar a Blaze más adelante (opcional)
 
@@ -169,7 +186,7 @@ public/
   index.html            markup de la SPA
   style.css              tema oscuro/claro vía variables CSS
   app.js                 lógica de la app (auth, Firestore, Realtime DB, modo demo)
-  categories.js           categorías fijas de gasto/ingreso
+  categories.js           categorías por defecto (semilla) + helpers
   charts.js               donut y barras dibujados a mano (SVG/HTML)
   firebase-config.js      config de Firebase (placeholder hasta configurarlo)
   manifest.json / sw.js    PWA instalable

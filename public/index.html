@@ -106,6 +106,25 @@
         </div>
       </div>
 
+      <div class="settings-block categories-block">
+        <h3>Categorías</h3>
+        <p class="settings-hint">Agrega, renombra o borra tus categorías y subcategorías. La categoría se puede elegir en vivo desde el atajo — no hace falta reconfigurarlo cuando agregas una nueva.</p>
+
+        <div class="cat-type-head">Gastos</div>
+        <div class="cat-list" id="expenseCatList"></div>
+        <div class="cat-add-row">
+          <input type="text" class="cat-add-input" id="expenseCatInput" placeholder="Nueva categoría de gasto…" maxlength="30">
+          <button class="chip-btn" id="expenseCatAddBtn">+ Agregar</button>
+        </div>
+
+        <div class="cat-type-head">Ingresos</div>
+        <div class="cat-list" id="incomeCatList"></div>
+        <div class="cat-add-row">
+          <input type="text" class="cat-add-input" id="incomeCatInput" placeholder="Nueva categoría de ingreso…" maxlength="30">
+          <button class="chip-btn" id="incomeCatAddBtn">+ Agregar</button>
+        </div>
+      </div>
+
       <div class="settings-block shortcut-block">
         <h3>⚡ Atajo para añadir gastos sin abrir la app</h3>
         <p class="settings-hint">Crea un botón en tu iPhone o Android que registra un gasto al instante — desde la pantalla de inicio, Siri, o un widget. No necesitas abrir MoneyPro. Los gastos del atajo se ven en tus movimientos la próxima vez que abras sesión (se sincronizan solos).</p>
@@ -115,8 +134,9 @@
           <button class="chip-btn" id="regenTokenBtn" title="Genera un token nuevo e invalida el anterior">Regenerar</button>
         </div>
         <div class="token-row">
-          <button class="chip-btn" id="copyUrlBtn">1. Copiar URL</button>
-          <button class="chip-btn" id="copyBodyBtn">2. Copiar cuerpo JSON</button>
+          <button class="chip-btn" id="copyCatUrlBtn">1. Copiar URL de categorías</button>
+          <button class="chip-btn" id="copyUrlBtn">2. Copiar URL para guardar</button>
+          <button class="chip-btn" id="copyBodyBtn">3. Copiar cuerpo JSON</button>
         </div>
         <p class="settings-hint small" id="demoTokenHint" hidden>El atajo solo funciona con una cuenta real (no en modo demostración).</p>
 
@@ -126,23 +146,25 @@
         </div>
 
         <ol class="steps-list" id="iosSteps">
-          <li><strong>Abre la app Atajos</strong> de Apple (viene instalada de fábrica) → pestaña Atajos → toca <strong>+</strong> para crear uno nuevo.</li>
+          <li><strong>Abre la app Atajos</strong> de Apple → pestaña Atajos → toca <strong>+</strong> para crear uno nuevo.</li>
+          <li>Agrega <strong>«Obtener contenido de URL»</strong> (esta consulta tus categorías en vivo): pega la URL del botón «1. Copiar URL de categorías». Déjala en método <strong>GET</strong> (no toques Método ni Cuerpo).</li>
+          <li>Agrega <strong>«Elegir de la lista»</strong>: en el campo <strong>Lista</strong>, borra el texto de ejemplo y toca la pastilla gris azul <strong>«Contenido de URL»</strong> (la variable del paso anterior) para usarla como lista — así el menú siempre muestra tus categorías actuales.</li>
           <li>Agrega <strong>«Preguntar por texto»</strong> (para el monto, ej. «¿Cuánto gastaste?»).</li>
-          <li>Agrega <strong>«Elegir de la lista»</strong> (para la categoría, así no puedes escribirla mal): en «Mensaje» pon «¿Categoría?», y en el editor de la lista agrega estas 8 opciones, una por una, <strong>tal cual, en minúsculas</strong>: <code>comida</code>, <code>transporte</code>, <code>vivienda</code>, <code>ocio</code>, <code>salud</code>, <code>servicios</code>, <code>compras</code>, <code>otros</code>.</li>
-          <li>Agrega <strong>«Obtener contenido de URL»</strong>: pega tu URL (botón «1. Copiar URL»), toca <strong>Mostrar más</strong>, Método <strong>POST</strong>, y en «Cuerpo de la solicitud» elige <strong>JSON</strong>.</li>
+          <li>Agrega otra <strong>«Obtener contenido de URL»</strong> (esta guarda el gasto): pega tu URL (botón «2. Copiar URL para guardar»), toca <strong>Mostrar más</strong>, Método <strong>POST</strong>, «Cuerpo de la solicitud» → <strong>JSON</strong>.</li>
           <li>Toca <strong>«Añadir campo nuevo»</strong> cuatro veces y llena cada uno — el <em>valor</em> de <code>amount</code> y <code>category</code> se elige tocando la pastilla gris de la variable correspondiente (no se escribe a mano):
             <br>• <code>amount</code> — tipo <strong>Número</strong> — valor: variable de «Preguntar por texto»
             <br>• <code>type</code> — tipo Texto — valor: <code>expense</code>
-            <br>• <code>category</code> — tipo Texto — valor: variable «Elemento elegido» de «Elegir de la lista»
+            <br>• <code>category</code> — tipo Texto — valor: variable <strong>«Elemento elegido»</strong> de «Elegir de la lista»
             <br>• <code>token</code> — tipo Texto — valor: pega tu token (arriba, junto a «Regenerar»)
           </li>
-          <li>Renombra el atajo a «Agregar gasto» (toca el nombre arriba) y agrégalo a tu pantalla de inicio: ⋯ → «Añadir a inicio». Un toque y el gasto queda registrado.</li>
+          <li>Renombra el atajo a «Agregar gasto» (toca el nombre arriba) y agrégalo a tu pantalla de inicio: ⋯ → «Añadir a inicio». Un toque, eliges categoría de la lista actual, y el gasto queda registrado.</li>
         </ol>
 
         <ol class="steps-list" id="androidSteps" hidden>
           <li>Instala <strong>HTTP Shortcuts</strong> (gratis, de Waboodoo) desde Play Store o F-Droid.</li>
-          <li>Crea un atajo nuevo: método <strong>POST</strong>, pega tu URL (botón «1. Copiar URL»).</li>
-          <li>En «Cuerpo de la solicitud» elige <strong>JSON personalizado</strong> y pega la plantilla (botón «2. Copiar cuerpo JSON»). Reemplaza el <code>0</code> de <code>"amount"</code> por una variable de tipo <strong>Número</strong>, y el texto <code>comida</code> de <code>"category"</code> por una variable de tipo <strong>Selección</strong> (con las 8 categorías como opciones, en minúsculas: <code>comida</code>, <code>transporte</code>, <code>vivienda</code>, <code>ocio</code>, <code>salud</code>, <code>servicios</code>, <code>compras</code>, <code>otros</code>) — así evitas errores de escritura.</li>
+          <li>Ve a Variables → crea una variable tipo <strong>Selección</strong> — algunas versiones permiten cargar las opciones "desde una petición HTTP"; si la tuya lo permite, apunta esa petición a la URL del botón «1. Copiar URL de categorías» (GET) para que el menú se llene solo con tus categorías.</li>
+          <li>Si tu versión no lo permite: crea la variable Selección con las opciones escritas a mano (deben coincidir con tus categorías actuales — revísalas en la sección "Categorías" de arriba, ya que puedes editarlas).</li>
+          <li>Crea el atajo: método <strong>POST</strong>, pega tu URL (botón «2. Copiar URL para guardar»), «Cuerpo de la solicitud» → <strong>JSON personalizado</strong>, pega la plantilla (botón «3. Copiar cuerpo JSON»). Reemplaza el <code>0</code> de <code>"amount"</code> por una variable <strong>Número</strong>, y el texto <code>comida</code> de <code>"category"</code> por tu variable Selección.</li>
           <li>Coloca el atajo como widget en tu pantalla de inicio. Un toque y el gasto queda registrado.</li>
         </ol>
       </div>
@@ -206,6 +228,10 @@
     <div class="field">
       <label>Categoría</label>
       <div class="category-grid" id="txCategoryGrid"></div>
+    </div>
+    <div class="field" id="txSubcategoryField" hidden>
+      <label>Subcategoría (opcional)</label>
+      <div class="category-grid" id="txSubcategoryGrid"></div>
     </div>
     <div class="field-row">
       <div class="field">
