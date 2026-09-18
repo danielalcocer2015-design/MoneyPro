@@ -171,6 +171,13 @@ function stopReal() {
   if (!state.demo) hideApp();
 }
 
+// Tolera mayúsculas, espacios y acentos ("Comida", " COMIDA ", "Inversión")
+// al hacer coincidir la categoría que llega del atajo con las categorías
+// internas de la app (ver categories.js).
+function normalizeCategoryInput(str) {
+  return (str || '').toString().trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
 function newToken() {
   const bytes = new Uint8Array(18);
   crypto.getRandomValues(bytes);
@@ -208,7 +215,8 @@ async function drainInbox(uid) {
       if (!Number.isFinite(amount) || amount <= 0) continue;
       const type = entry.type === 'income' ? 'income' : 'expense';
       const validCategoryIds = categoriesFor(type).map((c) => c.id);
-      const category = validCategoryIds.includes(entry.category) ? entry.category : (type === 'income' ? 'otros_ingresos' : 'otros');
+      const normalizedCategory = normalizeCategoryInput(entry.category);
+      const category = validCategoryIds.includes(normalizedCategory) ? normalizedCategory : (type === 'income' ? 'otros_ingresos' : 'otros');
       const date = entry.ts ? new Date(entry.ts).toISOString().slice(0, 10) : todayISO();
       const note = typeof entry.note === 'string' ? entry.note.slice(0, 120) : '';
       await fb.fs.addDoc(col, { amount, type, category, note, date, source: 'shortcut', createdAt: fb.fs.serverTimestamp() });
@@ -690,19 +698,26 @@ function registerServiceWorker() {
   }
 }
 
-async function init() {
+function init() {
   initTheme();
   wireEvents();
   registerServiceWorker();
   $('#firebaseDisabledHint').hidden = firebaseEnabled;
   $('#authForm').hidden = !firebaseEnabled;
+
+  // No bloquea en la carga de Firebase: si el SDK tarda o falla (red
+  // lenta, un CDN bloqueado), igual queremos que aparezca la pantalla de
+  // acceso con el botón de modo demostración cuanto antes.
   if (firebaseEnabled) {
-    await initAuthListener();
+    initAuthListener().catch((err) => {
+      console.error('No se pudo inicializar Firebase', err);
+      $('#authError').textContent = 'No se pudo conectar con el servidor. Revisa tu conexión, o usa el modo demostración.';
+      $('#authError').hidden = false;
+    });
   }
-  // Si no hay sesión activa tras un instante, muestra la pantalla de login.
   setTimeout(() => {
     if (!state.user && !state.demo) hideApp();
-  }, firebaseEnabled ? 600 : 0);
+  }, firebaseEnabled ? 1200 : 0);
 }
 
 init();
