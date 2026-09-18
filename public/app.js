@@ -155,13 +155,16 @@ async function startReal(user) {
     renderInicio();
   });
 
+  // Un solo orderBy (sin combinar dos campos) no necesita un índice
+  // compuesto de Firestore — la app ya reordena por fecha al renderizar,
+  // así que esto alcanza sin depender de crear un índice manualmente.
   const txCol = fb.fs.collection(fb.db, 'users', user.uid, 'transactions');
-  const q = fb.fs.query(txCol, fb.fs.orderBy('date', 'desc'), fb.fs.orderBy('createdAt', 'desc'));
+  const q = fb.fs.query(txCol, fb.fs.orderBy('date', 'desc'));
   unsubTxs?.();
   unsubTxs = fb.fs.onSnapshot(q, (snap) => {
     state.txs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderAll();
-  }, () => showSaved(false));
+  }, (err) => { console.error('transactions onSnapshot failed', err); showSaved(false); });
 
   const catRef = fb.fs.doc(fb.db, 'users', user.uid, 'meta', 'categories');
   unsubCategories?.();
