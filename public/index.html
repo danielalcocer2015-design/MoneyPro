@@ -126,11 +126,16 @@
         </div>
 
         <ol class="steps-list" id="iosSteps">
-          <li><strong>Abre la app Atajos</strong> de Apple (viene instalada de fábrica) y toca <strong>+</strong> para crear un atajo nuevo.</li>
-          <li>Agrega <strong>«Preguntar por texto»</strong> dos veces: una la vas a nombrar para el monto, otra para la categoría (ej. <code>comida</code>, <code>transporte</code>, <code>ocio</code>…).</li>
-          <li>Agrega <strong>«Obtener contenido de URL»</strong>: pega tu URL (botón «1. Copiar URL»), método <strong>POST</strong>, y en «Cuerpo de la solicitud» elige <strong>JSON</strong> y pega la plantilla (botón «2. Copiar cuerpo JSON»).</li>
-          <li>En la plantilla pegada, borra el <code>0</code> junto a <code>"amount"</code> e inserta ahí tu variable de monto (sin comillas). Borra la palabra <code>comida</code> (dejando las comillas) e inserta ahí tu variable de categoría. No toques <code>"token"</code> ni <code>"ts"</code>.</li>
-          <li>Guarda el atajo como «Agregar gasto» y agrégalo a tu pantalla de inicio, al Botón de Acción, o pídele a Siri que lo abra. Un toque y el gasto queda registrado.</li>
+          <li><strong>Abre la app Atajos</strong> de Apple (viene instalada de fábrica) → pestaña Atajos → toca <strong>+</strong> para crear uno nuevo.</li>
+          <li>Agrega <strong>«Preguntar por texto»</strong> dos veces: la primera para el monto (ej. «¿Cuánto gastaste?»), la segunda para la categoría (ej. «¿Categoría?»).</li>
+          <li>Agrega <strong>«Obtener contenido de URL»</strong>: pega tu URL (botón «1. Copiar URL»), toca <strong>Mostrar más</strong>, Método <strong>POST</strong>, y en «Cuerpo de la solicitud» elige <strong>JSON</strong>.</li>
+          <li>Toca <strong>«Añadir campo nuevo»</strong> cuatro veces y llena cada uno — el <em>valor</em> de <code>amount</code> y <code>category</code> se elige tocando la pastilla gris de la variable correspondiente (no se escribe a mano):
+            <br>• <code>amount</code> — tipo <strong>Número</strong> — valor: variable del 1er «Preguntar por texto»
+            <br>• <code>type</code> — tipo Texto — valor: <code>expense</code>
+            <br>• <code>category</code> — tipo Texto — valor: variable del 2do «Preguntar por texto»
+            <br>• <code>token</code> — tipo Texto — valor: pega tu token (arriba, junto a «Regenerar»)
+          </li>
+          <li>Renombra el atajo a «Agregar gasto» (toca el nombre arriba) y agrégalo a tu pantalla de inicio: ⋯ → «Añadir a inicio». Un toque y el gasto queda registrado.</li>
         </ol>
 
         <ol class="steps-list" id="androidSteps" hidden>
