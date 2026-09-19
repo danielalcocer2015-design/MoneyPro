@@ -34,12 +34,15 @@ El atajo no puede iniciar sesión, así que no escribe directo en Firestore.
 En su lugar:
 
 1. El atajo hace `POST` con JSON plano a tu Realtime Database:
-   `https://TU_PROYECTO-default-rtdb.firebaseio.com/txInbox/TU_UID.json`
-   con cuerpo `{ "amount": 50, "type": "expense", "category": "comida", "note": "", "token": "...", "ts": {".sv": "timestamp"} }`.
-2. `database.rules.json` valida que el campo `token` coincida con el token
-   guardado en `userTokens/TU_UID` antes de aceptar la escritura — así nadie
-   más puede escribir en tu buzón sin conocer tu token.
-3. La próxima vez que abres sesión en la app, `drainInbox()` (en `public/app.js`)
+   `https://TU_PROYECTO-default-rtdb.firebaseio.com/txInbox/TU_TOKEN.json`
+   con cuerpo `{ "amount": 50, "type": "expense", "category": "comida", "note": "", "ts": {".sv": "timestamp"} }`.
+   El **token es la URL misma** — no hace falta mandarlo también en el
+   cuerpo, ni tu uid: solo quien conoce tu token puede escribir ahí
+   (`database.rules.json` no permite listar ni adivinar tokens ajenos).
+   Esto hace que compartir el atajo con otra persona sea mucho más simple:
+   solo tiene un valor personal que reemplazar en todo el atajo (su token),
+   no dos (token + uid).
+2. La próxima vez que abres sesión en la app, `drainInbox()` (en `public/app.js`)
    copia automáticamente lo que haya en tu buzón a tus movimientos normales
    de Firestore, y limpia el buzón. Por eso un gasto agregado por atajo
    aparece en Inicio/Análisis la próxima vez que abras MoneyPro, no al
@@ -113,7 +116,10 @@ desplegado en Firebase Hosting:
 
 En **Ajustes → ⚡ Atajo** hay tres botones: **1. Copiar URL de categorías**
 (GET, para el menú en vivo), **2. Copiar URL para guardar** (POST, guarda el
-gasto), y **3. Copiar cuerpo JSON** (la plantilla del paso 2):
+gasto), y **3. Copiar cuerpo JSON** (la plantilla del paso 2). Además,
+**"📋 Copiar token"** copia tu token completo — úsalo siempre con ese botón,
+nunca lo escribas a mano (un solo carácter distinto y falla sin avisar por
+qué).
 
 ```json
 {
@@ -121,28 +127,52 @@ gasto), y **3. Copiar cuerpo JSON** (la plantilla del paso 2):
   "type": "expense",
   "category": "comida",
   "note": "",
-  "token": "tu-token-real-aquí",
   "ts": {".sv": "timestamp"}
 }
 ```
 
 Solo edita `amount` (el número `0`) y `category` (el texto `comida`, sin
-tocar las comillas) — todo lo demás se queda igual.
+tocar las comillas) — `type` normalmente también se vuelve dinámico (ver
+paso 2 más abajo, pregunta Gasto/Ingreso) — todo lo demás se queda igual.
 
 ### iPhone (Atajos de Apple)
 
-1. Abre la app **Atajos** → **+** para crear uno nuevo.
-2. Agrega **«Obtener contenido de URL»** con la URL del botón 1 (GET, sin
-   tocar método ni cuerpo) — consulta tus categorías en vivo.
-3. Agrega **«Elegir de la lista»**: en el campo Lista, usa la variable
-   «Contenido de URL» del paso anterior en vez de escribir opciones a mano.
-4. Agrega **«Preguntar por texto»** (para el monto).
-5. Agrega otra **«Obtener contenido de URL»** con la URL del botón 2,
-   método **POST**, cuerpo tipo **JSON**, con los campos `amount` (tipo
-   Número, variable del monto), `type` (`expense`), `category` (variable
-   «Elemento elegido» del paso 3) y `token` (tu token).
-6. Guarda el atajo y agrégalo a tu pantalla de inicio, al Botón de Acción,
-   o invócalo con Siri.
+Para que compartir el atajo con alguien más sea tan simple como pegar un
+solo valor, arma primero un campo con tu token y reutilízalo en todo lo
+demás:
+
+1. Abre **Atajos** → **+** para crear uno nuevo.
+2. Agrega **«Texto»**: pega tu token (botón «Copiar token»). Este va a ser
+   el único campo que alguien más tenga que cambiar si le compartes el atajo.
+3. (Opcional pero recomendado) Agrega **«Lista»** con dos elementos: `Gasto`
+   e `Ingreso`. Justo después, **«Seleccionar de la lista»** con mensaje
+   «¿Gasto o ingreso?». Luego dos **«Reemplazar texto»** encadenadas:
+   `Gasto`→`expense` (en el elemento elegido), y `Ingreso`→`income` (en el
+   resultado de la anterior) — el resultado final es tu variable "Tipo".
+   Si te lo saltas, usa `expense` fijo en el paso 5.
+4. Agrega **«Texto»**: arma la URL de categorías combinando texto y
+   variables: `https://TU_PROYECTO-default-rtdb.firebaseio.com/catList/` +
+   [tu Texto del paso 2] + `/` + [tu "Tipo" del paso 3, o escribe `expense`
+   si te saltaste ese paso] + `.json`.
+5. Agrega **«Obtener contenido de URL»** con la URL del paso 4 (GET, sin
+   tocar método ni cuerpo).
+6. Agrega **«Elegir de la lista»**: en el campo Lista, usa la variable
+   «Contenido de URL» del paso 5.
+7. Agrega **«Preguntar por texto»** (o «Solicitar número») para el monto.
+8. Agrega otro **«Texto»**: `https://TU_PROYECTO-default-rtdb.firebaseio.com/txInbox/`
+   + [tu Texto del paso 2] + `.json` — esta es la URL de guardar.
+9. Agrega **«Obtener contenido de URL»** con la URL del paso 8, método
+   **POST**, cuerpo tipo **JSON**, con los campos `amount` (tipo Número,
+   variable del monto), `type` (tu "Tipo" del paso 3, o `expense` fijo) y
+   `category` (variable «Elemento elegido» del paso 6). **No** agregues un
+   campo `token` — ya no hace falta, va en la URL.
+10. Guarda el atajo y agrégalo a tu pantalla de inicio, al Botón de Acción,
+    o invócalo con Siri.
+
+Para compartirlo: ••• → **Compartir** → **Copiar enlace de iCloud**. Quien
+lo reciba solo edita el **Texto del paso 2** con su propio token (después
+de crear su cuenta en la app y copiarlo desde Ajustes) — todo lo demás
+funciona igual, sin tocar nada más.
 
 ### Android (HTTP Shortcuts)
 

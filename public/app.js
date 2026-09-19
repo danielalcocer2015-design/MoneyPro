@@ -178,12 +178,15 @@ async function startReal(user) {
   unsubToken?.();
   unsubToken = fb.rt.onValue(fb.rt.ref(fb.rtdb, `userTokens/${user.uid}`), (snap) => {
     state.webhookToken = snap.val() || null;
-    if (!state.webhookToken && !generatingToken) regenerateToken();
-    else syncCatListToRtdb();
+    if (!state.webhookToken && !generatingToken) {
+      regenerateToken();
+    } else {
+      syncCatListToRtdb();
+      if (state.webhookToken) drainInbox(user.uid, state.webhookToken);
+    }
     renderSettings();
   });
 
-  drainInbox(user.uid);
   showApp();
 }
 
@@ -217,6 +220,10 @@ async function regenerateToken() {
   generatingToken = true;
   try {
     const oldToken = state.webhookToken;
+    // Drena cualquier gasto pendiente del token viejo antes de
+    // abandonarlo — si no, quedaría inaccesible (el buzón ahora vive
+    // bajo la ruta del token, no del uid).
+    if (oldToken) await drainInbox(state.user.uid, oldToken);
     const token = newToken();
     await fb.rt.set(fb.rt.ref(fb.rtdb, `userTokens/${state.user.uid}`), token);
     await syncCatListToRtdb(token);
@@ -244,13 +251,14 @@ function syncCatListToRtdb(tokenOverride) {
 }
 
 // Los gastos que llegan por el atajo se guardan primero en un "buzón" en
-// Realtime Database (el atajo no tiene sesión, así que no puede escribir
-// directo en Firestore). Cada vez que abres sesión, se copian a
-// Firestore como movimientos normales y se limpia el buzón.
-async function drainInbox(uid) {
-  if (!fb) return;
+// Realtime Database, bajo la ruta del token (no del uid — así el atajo
+// solo necesita conocer un valor para todo: ni sabe ni necesita tu uid).
+// Cada vez que abres sesión se copian a Firestore como movimientos
+// normales y se limpia el buzón.
+async function drainInbox(uid, token) {
+  if (!fb || !token) return;
   try {
-    const inboxRef = fb.rt.ref(fb.rtdb, `txInbox/${uid}`);
+    const inboxRef = fb.rt.ref(fb.rtdb, `txInbox/${token}`);
     const snap = await fb.rt.get(inboxRef);
     if (!snap.exists()) return;
     const entries = snap.val();
@@ -591,21 +599,22 @@ function renderAnalisis() {
 // ---------------------------------------------------------------------
 function shortcutInboxUrl() {
   const base = firebaseConfig.databaseURL || 'https://TU_PROYECTO-default-rtdb.firebaseio.com';
-  const uidPart = state.user?.uid || 'TU_UID';
-  return `${base}/txInbox/${uidPart}.json`;
+  const tokenPart = state.webhookToken || 'TU_TOKEN';
+  return `${base}/txInbox/${tokenPart}.json`;
 }
 function shortcutCatListUrl(type = 'expense') {
   const base = firebaseConfig.databaseURL || 'https://TU_PROYECTO-default-rtdb.firebaseio.com';
   const tokenPart = state.webhookToken || 'TU_TOKEN';
   return `${base}/catList/${tokenPart}/${type}.json`;
 }
-function shortcutBodyTemplate(token) {
+function shortcutBodyTemplate() {
+  // El token ya no va en el cuerpo — ahora es la URL misma
+  // (txInbox/TU_TOKEN.json) la que autoriza la escritura.
   return JSON.stringify({
     amount: 0,
     type: 'expense',
     category: 'comida',
     note: '',
-    token: token || 'TU_TOKEN',
     ts: { '.sv': 'timestamp' },
   }, null, 2);
 }
@@ -947,7 +956,7 @@ function wireEvents() {
     }
   });
   $('#copyBodyBtn').addEventListener('click', async () => {
-    const body = shortcutBodyTemplate(state.webhookToken);
+    const body = shortcutBodyTemplate();
     try {
       await navigator.clipboard.writeText(body);
       showSaved(true);

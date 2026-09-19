@@ -150,18 +150,16 @@
         </div>
 
         <ol class="steps-list" id="iosSteps">
-          <li><strong>Abre la app Atajos</strong> de Apple → pestaña Atajos → toca <strong>+</strong> para crear uno nuevo.</li>
-          <li>Agrega <strong>«Obtener contenido de URL»</strong> (esta consulta tus categorías en vivo): pega la URL del botón «1. Copiar URL de categorías». Déjala en método <strong>GET</strong> (no toques Método ni Cuerpo).</li>
-          <li>Agrega <strong>«Elegir de la lista»</strong>: en el campo <strong>Lista</strong>, borra el texto de ejemplo y toca la pastilla gris azul <strong>«Contenido de URL»</strong> (la variable del paso anterior) para usarla como lista — así el menú siempre muestra tus categorías actuales.</li>
-          <li>Agrega <strong>«Preguntar por texto»</strong> (para el monto, ej. «¿Cuánto gastaste?»).</li>
-          <li>Agrega otra <strong>«Obtener contenido de URL»</strong> (esta guarda el gasto): pega tu URL (botón «2. Copiar URL para guardar»), toca <strong>Mostrar más</strong>, Método <strong>POST</strong>, «Cuerpo de la solicitud» → <strong>JSON</strong>.</li>
-          <li>Toca <strong>«Añadir campo nuevo»</strong> cuatro veces y llena cada uno — el <em>valor</em> de <code>amount</code> y <code>category</code> se elige tocando la pastilla gris de la variable correspondiente (no se escribe a mano):
-            <br>• <code>amount</code> — tipo <strong>Número</strong> — valor: variable de «Preguntar por texto»
-            <br>• <code>type</code> — tipo Texto — valor: <code>expense</code>
-            <br>• <code>category</code> — tipo Texto — valor: variable <strong>«Elemento elegido»</strong> de «Elegir de la lista»
-            <br>• <code>token</code> — tipo Texto — valor: pega tu token (arriba, junto a «Regenerar»)
-          </li>
-          <li>Renombra el atajo a «Agregar gasto» (toca el nombre arriba) y agrégalo a tu pantalla de inicio: ⋯ → «Añadir a inicio». Un toque, eliges categoría de la lista actual, y el gasto queda registrado.</li>
+          <li><strong>Abre la app Atajos</strong> de Apple → pestaña Atajos → toca <strong>+</strong>. Empieza por un campo con tu token — así, si algún día compartes el atajo, quien lo reciba solo edita este único valor.</li>
+          <li>Agrega <strong>«Texto»</strong>: pega tu token (botón «📋 Copiar token»).</li>
+          <li><em>Opcional pero recomendado</em> — pregunta Gasto/Ingreso: agrega <strong>«Lista»</strong> con dos elementos (<code>Gasto</code>, <code>Ingreso</code>), luego <strong>«Seleccionar de la lista»</strong> (mensaje «¿Gasto o ingreso?»), y dos <strong>«Reemplazar texto»</strong> encadenadas: <code>Gasto</code>→<code>expense</code> (en el elemento elegido), luego <code>Ingreso</code>→<code>income</code> (en el resultado de la anterior). El resultado final es tu variable "Tipo". Si te lo saltas, usa <code>expense</code> fijo más abajo.</li>
+          <li>Agrega <strong>«Texto»</strong>: arma la URL de categorías combinando texto y variables, todo en una línea: la base fija de la URL (botón «1. Copiar URL de categorías», pero corta el token y el tipo del final) + tu variable de Texto (token) + <code>/</code> + tu variable "Tipo" (o <code>expense</code>) + <code>.json</code>.</li>
+          <li>Agrega <strong>«Obtener contenido de URL»</strong> con la URL del paso anterior (GET, sin tocar método ni cuerpo).</li>
+          <li>Agrega <strong>«Elegir de la lista»</strong>: en el campo Lista, usa la variable <strong>«Contenido de URL»</strong> del paso anterior.</li>
+          <li>Agrega <strong>«Preguntar por texto»</strong> (para el monto).</li>
+          <li>Agrega otro <strong>«Texto»</strong>: la base de la URL de guardar + tu variable de Texto (token) + <code>.json</code> (compárala con el botón «2. Copiar URL para guardar» para la base correcta).</li>
+          <li>Agrega <strong>«Obtener contenido de URL»</strong> con esa URL, Método <strong>POST</strong>, «Cuerpo de la solicitud» → <strong>JSON</strong>. Agrega tres campos: <code>amount</code> (tipo Número, variable del monto), <code>type</code> (tu variable "Tipo", o <code>expense</code> fijo), <code>category</code> (variable «Elemento elegido» de «Elegir de la lista»). <strong>No agregues un campo <code>token</code></strong> — ya no hace falta, va en la URL.</li>
+          <li>Renombra el atajo y agrégalo a tu pantalla de inicio: ⋯ → «Añadir a inicio». Para compartirlo: ⋯ → Compartir → Copiar enlace de iCloud — quien lo reciba solo edita el «Texto» del paso 2 con su propio token.</li>
         </ol>
 
         <ol class="steps-list" id="androidSteps" hidden>
