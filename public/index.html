@@ -169,8 +169,9 @@
         <p class="settings-hint small">Usa siempre el botón «Copiar token» (no lo escribas a mano ni lo copies de otro lado) — un solo carácter distinto y el atajo deja de funcionar sin avisar por qué.</p>
         <div class="token-row">
           <button class="chip-btn" id="copyCatUrlBtn">1. Copiar URL de categorías</button>
-          <button class="chip-btn" id="copyUrlBtn">2. Copiar URL para guardar</button>
-          <button class="chip-btn" id="copyBodyBtn">3. Copiar cuerpo JSON</button>
+          <button class="chip-btn" id="copyAcctUrlBtn">2. Copiar URL de cuentas</button>
+          <button class="chip-btn" id="copyUrlBtn">3. Copiar URL para guardar</button>
+          <button class="chip-btn" id="copyBodyBtn">4. Copiar cuerpo JSON</button>
         </div>
         <p class="settings-hint small" id="demoTokenHint" hidden>El atajo solo funciona con una cuenta real (no en modo demostración).</p>
 
@@ -185,10 +186,12 @@
           <li><em>Opcional pero recomendado</em> — pregunta Gasto/Ingreso: agrega <strong>«Lista»</strong> con dos elementos (<code>Gasto</code>, <code>Ingreso</code>), luego <strong>«Seleccionar de la lista»</strong> (mensaje «¿Gasto o ingreso?»), y dos <strong>«Reemplazar texto»</strong> encadenadas: <code>Gasto</code>→<code>expense</code> (en el elemento elegido), luego <code>Ingreso</code>→<code>income</code> (en el resultado de la anterior). El resultado final es tu variable "Tipo". Si te lo saltas, usa <code>expense</code> fijo más abajo.</li>
           <li>Agrega <strong>«Texto»</strong>: arma la URL de categorías combinando texto y variables, todo en una línea: la base fija de la URL (botón «1. Copiar URL de categorías», pero corta el token y el tipo del final) + tu variable de Texto (token) + <code>/</code> + tu variable "Tipo" (o <code>expense</code>) + <code>.json</code>.</li>
           <li>Agrega <strong>«Obtener contenido de URL»</strong> con la URL del paso anterior (GET, sin tocar método ni cuerpo).</li>
-          <li>Agrega <strong>«Elegir de la lista»</strong>: en el campo Lista, usa la variable <strong>«Contenido de URL»</strong> del paso anterior.</li>
+          <li>Agrega <strong>«Elegir de la lista»</strong>: en el campo Lista, usa la variable <strong>«Contenido de URL»</strong> del paso anterior. Toca el resultado (la burbuja morada) → <strong>«Cambiar nombre»</strong> → llámala <code>Categoría elegida</code>. Vas a agregar otra «Elegir de la lista» más abajo para la cuenta, y con el mismo nombre genérico es fácil confundirlas al armar el JSON final.</li>
           <li>Agrega <strong>«Preguntar por texto»</strong> (para el monto).</li>
-          <li>Agrega otro <strong>«Texto»</strong>: la base de la URL de guardar + tu variable de Texto (token) + <code>.json</code> (compárala con el botón «2. Copiar URL para guardar» para la base correcta).</li>
-          <li>Agrega <strong>«Obtener contenido de URL»</strong> con esa URL, Método <strong>POST</strong>, «Cuerpo de la solicitud» → <strong>JSON</strong>. Agrega tres campos: <code>amount</code> (tipo Número, variable del monto), <code>type</code> (tu variable "Tipo", o <code>expense</code> fijo), <code>category</code> (variable «Elemento elegido» de «Elegir de la lista»). <strong>No agregues un campo <code>token</code></strong> — ya no hace falta, va en la URL.</li>
+          <li><em>Opcional pero recomendado</em> — pregunta la cuenta: agrega <strong>«Lista»</strong> con dos elementos (<code>Corriente</code>, <code>Tarjeta</code>), luego <strong>«Seleccionar de la lista»</strong> (mensaje «¿Cuenta corriente o tarjeta?»), y dos <strong>«Reemplazar texto»</strong> encadenadas: <code>Corriente</code>→<code>corriente</code>, luego <code>Tarjeta</code>→<code>credito</code>. El resultado final es tu variable "Grupo de cuenta". Si te lo saltas, no agregues el campo <code>account</code> en el paso de guardar — el movimiento queda sin cuenta y lo asignas luego a mano.</li>
+          <li>Si agregaste el paso anterior: agrega <strong>«Texto»</strong> con la URL de cuentas = la base fija (botón «2. Copiar URL de cuentas», cortando el token y el grupo del final) + tu variable de Texto (token) + <code>/</code> + tu variable "Grupo de cuenta" + <code>.json</code>. Luego <strong>«Obtener contenido de URL»</strong> (GET) con esa URL, y <strong>«Elegir de la lista»</strong> usando la variable «Contenido de URL» de este paso. Renómbrala (igual que antes) a <code>Cuenta elegida</code>.</li>
+          <li>Agrega otro <strong>«Texto»</strong>: la base de la URL de guardar + tu variable de Texto (token) + <code>.json</code> (compárala con el botón «3. Copiar URL para guardar» para la base correcta).</li>
+          <li>Agrega <strong>«Obtener contenido de URL»</strong> con esa URL, Método <strong>POST</strong>, «Cuerpo de la solicitud» → <strong>JSON</strong>. Agrega los campos: <code>amount</code> (tipo Número, variable del monto), <code>type</code> (tu variable "Tipo", o <code>expense</code> fijo), <code>category</code> (variable <code>Categoría elegida</code>), y si preguntaste la cuenta, <code>account</code> (variable <code>Cuenta elegida</code>). <strong>No agregues un campo <code>token</code></strong> — ya no hace falta, va en la URL.</li>
           <li>Renombra el atajo y agrégalo a tu pantalla de inicio: ⋯ → «Añadir a inicio». Para compartirlo: ⋯ → Compartir → Copiar enlace de iCloud — quien lo reciba solo edita el «Texto» del paso 2 con su propio token.</li>
         </ol>
 
@@ -196,7 +199,8 @@
           <li>Instala <strong>HTTP Shortcuts</strong> (gratis, de Waboodoo) desde Play Store o F-Droid.</li>
           <li>Ve a Variables → crea una variable tipo <strong>Selección</strong> — algunas versiones permiten cargar las opciones "desde una petición HTTP"; si la tuya lo permite, apunta esa petición a la URL del botón «1. Copiar URL de categorías» (GET) para que el menú se llene solo con tus categorías.</li>
           <li>Si tu versión no lo permite: crea la variable Selección con las opciones escritas a mano (deben coincidir con tus categorías actuales — revísalas en la sección "Categorías" de arriba, ya que puedes editarlas).</li>
-          <li>Crea el atajo: método <strong>POST</strong>, pega tu URL (botón «2. Copiar URL para guardar»), «Cuerpo de la solicitud» → <strong>JSON personalizado</strong>, pega la plantilla (botón «3. Copiar cuerpo JSON»). Reemplaza el <code>0</code> de <code>"amount"</code> por una variable <strong>Número</strong>, y el texto <code>comida</code> de <code>"category"</code> por tu variable Selección.</li>
+          <li><em>Opcional</em> — repite el paso 2 para crear otra variable Selección de cuenta, apuntando a la URL del botón «2. Copiar URL de cuentas» (o con las opciones escritas a mano, igual que las categorías).</li>
+          <li>Crea el atajo: método <strong>POST</strong>, pega tu URL (botón «3. Copiar URL para guardar»), «Cuerpo de la solicitud» → <strong>JSON personalizado</strong>, pega la plantilla (botón «4. Copiar cuerpo JSON»). Reemplaza el <code>0</code> de <code>"amount"</code> por una variable <strong>Número</strong>, el texto <code>comida</code> de <code>"category"</code> por tu variable Selección de categoría, y si creaste la variable de cuenta, el texto vacío de <code>"account"</code> por ella (si no, borra ese campo del JSON).</li>
           <li>Coloca el atajo como widget en tu pantalla de inicio. Un toque y el gasto queda registrado.</li>
         </ol>
       </div>

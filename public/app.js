@@ -801,13 +801,20 @@ function shortcutCatListUrl(type = 'expense') {
   const tokenPart = state.webhookToken || 'TU_TOKEN';
   return `${base}/catList/${tokenPart}/${type}.json`;
 }
+function shortcutAccountListUrl(kind = 'corriente') {
+  const base = firebaseConfig.databaseURL || 'https://TU_PROYECTO-default-rtdb.firebaseio.com';
+  const tokenPart = state.webhookToken || 'TU_TOKEN';
+  return `${base}/accountList/${tokenPart}/${kind}.json`;
+}
 function shortcutBodyTemplate() {
   // El token ya no va en el cuerpo — ahora es la URL misma
-  // (txInbox/TU_TOKEN.json) la que autoriza la escritura.
+  // (txInbox/TU_TOKEN.json) la que autoriza la escritura. "account" es
+  // opcional: si tu atajo no lo manda, el movimiento queda sin cuenta.
   return JSON.stringify({
     amount: 0,
     type: 'expense',
     category: 'comida',
+    account: '',
     note: '',
     ts: { '.sv': 'timestamp' },
   }, null, 2);
@@ -825,6 +832,7 @@ function renderSettings() {
   $('#tokenDisplay').textContent = state.demo ? 'No disponible en modo demo' : (state.webhookToken || 'Generando…');
   $('#copyTokenBtn').disabled = !tokenAvailable;
   $('#copyCatUrlBtn').disabled = !tokenAvailable;
+  $('#copyAcctUrlBtn').disabled = !tokenAvailable;
   $('#copyUrlBtn').disabled = !tokenAvailable;
   $('#copyBodyBtn').disabled = !tokenAvailable;
   $('#regenTokenBtn').disabled = state.demo;
@@ -1301,6 +1309,17 @@ function wireEvents() {
       await navigator.clipboard.writeText(url);
       showSaved(true);
       $('#saveLabel').textContent = 'URL de categorías copiada';
+      setTimeout(() => { $('#saveLabel').textContent = 'Guardado'; }, 1800);
+    } catch {
+      prompt('Copia esta URL:', url);
+    }
+  });
+  $('#copyAcctUrlBtn').addEventListener('click', async () => {
+    const url = shortcutAccountListUrl('corriente');
+    try {
+      await navigator.clipboard.writeText(url);
+      showSaved(true);
+      $('#saveLabel').textContent = 'URL de cuentas copiada';
       setTimeout(() => { $('#saveLabel').textContent = 'Guardado'; }, 1800);
     } catch {
       prompt('Copia esta URL:', url);
