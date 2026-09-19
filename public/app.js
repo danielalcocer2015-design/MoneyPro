@@ -628,6 +628,10 @@ function setView(view) {
   state.view = view;
   $$('.view').forEach((el) => { el.hidden = el.dataset.view !== view; });
   $$('.nav-tabs button').forEach((btn) => btn.classList.toggle('active', btn.dataset.view === view));
+  // El + agrega un movimiento — no aplica en Cuentas (tiene sus propios
+  // botones "+ Agregar") ni en Ajustes, y ahí solo estorbaba tapando el
+  // contenido de más abajo.
+  $('#addFab').hidden = view === 'cuentas' || view === 'ajustes';
   if (view === 'movimientos') renderMovimientos();
   if (view === 'cuentas') renderAccountsAdmin();
   if (view === 'analisis') renderAnalisis();
