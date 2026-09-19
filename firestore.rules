@@ -10,28 +10,34 @@ service cloud.firestore {
       allow update: if request.auth != null && request.auth.uid == uid;
       allow delete: if false;
 
-      // Movimientos (gastos/ingresos) del usuario. El atajo de iOS/Android
-      // NO escribe aquí directo (no tiene sesión) — deja el gasto en
-      // Realtime Database (ver database.rules.json) y la app lo sincroniza
-      // a esta colección la próxima vez que abres sesión.
+      // Movimientos (gastos/ingresos/transferencias) del usuario. El atajo
+      // de iOS/Android NO escribe aquí directo (no tiene sesión) — deja el
+      // gasto en Realtime Database (ver database.rules.json) y la app lo
+      // sincroniza a esta colección la próxima vez que abres sesión.
       match /transactions/{txId} {
         allow read, delete: if request.auth != null && request.auth.uid == uid;
 
-        allow create: if request.auth != null && request.auth.uid == uid
+        allow create, update: if request.auth != null && request.auth.uid == uid
           && request.resource.data.amount is number
           && request.resource.data.amount > 0
-          && request.resource.data.type in ['income', 'expense']
-          && request.resource.data.category is string;
-
-        allow update: if request.auth != null && request.auth.uid == uid
-          && request.resource.data.amount is number
-          && request.resource.data.amount > 0
-          && request.resource.data.type in ['income', 'expense'];
+          && request.resource.data.type in ['income', 'expense', 'transfer']
+          && (
+            (request.resource.data.type in ['income', 'expense'] && request.resource.data.category is string)
+            || (request.resource.data.type == 'transfer'
+                && request.resource.data.fromAccountId is string
+                && request.resource.data.toAccountId is string)
+          );
       }
 
       // Categorías/subcategorías personalizadas del usuario (un solo
       // documento con listas "expense"/"income" — ver public/categories.js).
       match /meta/categories {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
+      // Cuentas del usuario (efectivo, débito, tarjetas de crédito — un
+      // solo documento con listas "corriente"/"credito", ver public/accounts.js).
+      match /meta/accounts {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
     }

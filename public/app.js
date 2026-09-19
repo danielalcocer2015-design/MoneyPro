@@ -1,5 +1,6 @@
 import { firebaseConfig, firebaseEnabled } from './firebase-config.js';
 import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES, FALLBACK_ID, defaultCategoryDoc, slugify, findCategory } from './categories.js';
+import { defaultAccountDoc, slugifyAccount, allAccounts, findAccount, defaultAccountId } from './accounts.js';
 import { renderDonutChart, renderBarChart } from './charts.js';
 
 const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/10.13.0';
@@ -12,7 +13,8 @@ const state = {
   currency: 'MXN',
   webhookToken: null,
   categories: defaultCategoryDoc(), // { expense: [...], income: [...] } — personalizable por usuario
-  txs: [],           // { id, amount, type, category, subcategory, note, date, source }
+  accounts: defaultAccountDoc(),    // { corriente: [...], credito: [...] } — personalizable por usuario
+  txs: [],           // { id, amount, type, category, subcategory, accountId, fromAccountId, toAccountId, note, date, source }
   view: 'inicio',
   filterMonth: '',
   filterType: '',
@@ -21,6 +23,9 @@ const state = {
   txType: 'expense',
   txCategory: DEFAULT_EXPENSE_CATEGORIES[0].id,
   txSubcategory: '',
+  txAccount: '',
+  txFromAccount: '',
+  txToAccount: '',
 };
 
 let fb = null;         // { app, auth, firestore, realtime database modules + instances }
@@ -28,6 +33,7 @@ let unsubUser = null;
 let unsubTxs = null;
 let unsubToken = null;
 let unsubCategories = null;
+let unsubAccounts = null;
 let generatingToken = false;
 
 // Categorías/subcategorías: leen de state.categories (personalizables),
@@ -37,6 +43,18 @@ function categoriesFor(type) {
 }
 function categoryInfo(type, id) {
   return findCategory(categoriesFor(type), id) || { id, label: id || 'Otros', icon: '🔧', subcategories: [] };
+}
+
+// Cuentas: leen de state.accounts (personalizables), con las de
+// accounts.js solo como semilla inicial (ver defaultAccountDoc).
+function accountsList() {
+  return allAccounts(state.accounts);
+}
+function accountInfo(id) {
+  return findAccount(state.accounts, id) || { id, name: id ? 'Cuenta eliminada' : 'Sin cuenta', icon: '❔', kind: 'corriente' };
+}
+function currentDefaultAccountId() {
+  return defaultAccountId(state.accounts);
 }
 
 // ---------------------------------------------------------------------
@@ -132,6 +150,9 @@ async function signUp(email, password) {
     email, currency: 'MXN', createdAt: fb.fs.serverTimestamp(),
   }, { merge: true });
   await fb.fs.setDoc(fb.fs.doc(fb.db, 'users', cred.user.uid, 'meta', 'categories'), defaultCategoryDoc());
+  const seedAccounts = defaultAccountDoc();
+  if (seedAccounts.corriente[0]) seedAccounts.corriente[0].isDefault = true;
+  await fb.fs.setDoc(fb.fs.doc(fb.db, 'users', cred.user.uid, 'meta', 'accounts'), seedAccounts);
 }
 async function signOutUser() {
   await ensureFirebase();
@@ -175,6 +196,15 @@ async function startReal(user) {
     renderAll();
   });
 
+  const acctRef = fb.fs.doc(fb.db, 'users', user.uid, 'meta', 'accounts');
+  unsubAccounts?.();
+  unsubAccounts = fb.fs.onSnapshot(acctRef, (snap) => {
+    const data = snap.data();
+    state.accounts = (data && data.corriente && data.credito) ? data : defaultAccountDoc();
+    syncAccountListToRtdb();
+    renderAll();
+  });
+
   unsubToken?.();
   unsubToken = fb.rt.onValue(fb.rt.ref(fb.rtdb, `userTokens/${user.uid}`), (snap) => {
     state.webhookToken = snap.val() || null;
@@ -182,6 +212,7 @@ async function startReal(user) {
       regenerateToken();
     } else {
       syncCatListToRtdb();
+      syncAccountListToRtdb();
       if (state.webhookToken) drainInbox(user.uid, state.webhookToken);
     }
     renderSettings();
@@ -195,6 +226,7 @@ function stopReal() {
   unsubTxs?.(); unsubTxs = null;
   unsubToken?.(); unsubToken = null;
   unsubCategories?.(); unsubCategories = null;
+  unsubAccounts?.(); unsubAccounts = null;
   state.user = null;
   state.txs = [];
   state.webhookToken = null;
@@ -227,8 +259,10 @@ async function regenerateToken() {
     const token = newToken();
     await fb.rt.set(fb.rt.ref(fb.rtdb, `userTokens/${state.user.uid}`), token);
     await syncCatListToRtdb(token);
+    await syncAccountListToRtdb(token);
     if (oldToken && oldToken !== token) {
       fb.rt.remove(fb.rt.ref(fb.rtdb, `catList/${oldToken}`)).catch(() => {});
+      fb.rt.remove(fb.rt.ref(fb.rtdb, `accountList/${oldToken}`)).catch(() => {});
     }
   } catch (err) {
     console.error(err);
@@ -248,6 +282,19 @@ function syncCatListToRtdb(tokenOverride) {
     income: state.categories.income.map((c) => c.label),
   };
   return fb.rt.set(fb.rt.ref(fb.rtdb, `catList/${token}`), payload).catch((err) => console.error('syncCatListToRtdb failed', err));
+}
+
+// Copia los nombres de cuentas (públicos solo para quien conoce el token)
+// a Realtime Database, para que el atajo pueda consultarlas en vivo antes
+// de mostrar el menú de cuentas — ver database.rules.json → accountList.
+function syncAccountListToRtdb(tokenOverride) {
+  const token = tokenOverride || state.webhookToken;
+  if (!fb || state.demo || !state.user || !token) return Promise.resolve();
+  const payload = {
+    corriente: state.accounts.corriente.map((a) => a.name),
+    credito: state.accounts.credito.map((a) => a.name),
+  };
+  return fb.rt.set(fb.rt.ref(fb.rtdb, `accountList/${token}`), payload).catch((err) => console.error('syncAccountListToRtdb failed', err));
 }
 
 // Los gastos que llegan por el atajo se guardan primero en un "buzón" en
@@ -280,9 +327,17 @@ async function drainInbox(uid, token) {
       const normalizedInput = normalizeCategoryInput(entry.category);
       const matched = list.find((c) => c.id === normalizedInput || normalizeCategoryInput(c.label) === normalizedInput);
       const category = matched ? matched.id : FALLBACK_ID[type];
+      // La cuenta es opcional (atajos ya configurados antes de esta función
+      // no la mandan) — si no coincide con ninguna, el movimiento queda
+      // sin cuenta asignada (accountId: '') para reasignar a mano.
+      const normalizedAccount = typeof entry.account === 'string' ? normalizeCategoryInput(entry.account) : '';
+      const matchedAccount = normalizedAccount
+        ? accountsList().find((a) => a.id === normalizedAccount || normalizeCategoryInput(a.name) === normalizedAccount)
+        : null;
+      const accountId = matchedAccount ? matchedAccount.id : '';
       const date = entry.ts ? new Date(entry.ts).toISOString().slice(0, 10) : todayISO();
       const note = typeof entry.note === 'string' ? entry.note.slice(0, 120) : '';
-      await fb.fs.addDoc(col, { amount, type, category, note, date, source: 'shortcut', createdAt: fb.fs.serverTimestamp() });
+      await fb.fs.addDoc(col, { amount, type, category, accountId, note, date, source: 'shortcut', createdAt: fb.fs.serverTimestamp() });
       count++;
     }
     await fb.rt.update(inboxRef, cleared);
@@ -339,11 +394,26 @@ function demoCategories() {
     return defaultCategoryDoc();
   }
 }
+function demoAccounts() {
+  const raw = localStorage.getItem('moneypro_demo_accounts');
+  if (!raw) {
+    const seed = defaultAccountDoc();
+    if (seed.corriente[0]) seed.corriente[0].isDefault = true;
+    return seed;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return (parsed && parsed.corriente && parsed.credito) ? parsed : defaultAccountDoc();
+  } catch {
+    return defaultAccountDoc();
+  }
+}
 function startDemo() {
   state.demo = true;
   state.user = null;
   state.currency = localStorage.getItem('moneypro_demo_currency') || 'MXN';
   state.categories = demoCategories();
+  state.accounts = demoAccounts();
   let txs = demoTxs();
   if (!txs.length) txs = seedDemoData();
   state.txs = txs;
@@ -474,6 +544,75 @@ async function deleteSubcategory(type, categoryId, subId) {
 }
 
 // ---------------------------------------------------------------------
+// CRUD de cuentas (rama demo o real)
+// ---------------------------------------------------------------------
+function currentAccountList(kind) {
+  return state.accounts[kind === 'credito' ? 'credito' : 'corriente'];
+}
+
+async function persistAccounts(newAccounts) {
+  state.accounts = newAccounts;
+  if (state.demo) {
+    localStorage.setItem('moneypro_demo_accounts', JSON.stringify(newAccounts));
+  } else if (fb && state.user) {
+    await fb.fs.setDoc(fb.fs.doc(fb.db, 'users', state.user.uid, 'meta', 'accounts'), newAccounts);
+    await syncAccountListToRtdb();
+  }
+  renderAccountsAdmin();
+  renderAll();
+}
+
+async function addAccount(kind, name) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return;
+  const list = currentAccountList(kind);
+  const id = slugifyAccount(trimmed);
+  if (list.some((a) => a.id === id)) { alert('Ya existe una cuenta con ese nombre.'); return; }
+  const hasAnyAccount = accountsList().length > 0;
+  const updated = {
+    ...state.accounts,
+    [kind]: [...list, { id, name: trimmed, icon: kind === 'credito' ? '💳' : '💵', kind, initialBalance: 0, isDefault: !hasAnyAccount }],
+  };
+  await persistAccounts(updated);
+}
+
+async function deleteAccount(kind, id) {
+  if (!confirm('¿Eliminar esta cuenta? Tus movimientos existentes con esta cuenta no se borran, solo quedan sin cuenta asignada.')) return;
+  const wasDefault = findAccount(state.accounts, id)?.isDefault;
+  const updated = { ...state.accounts, [kind]: currentAccountList(kind).filter((a) => a.id !== id) };
+  if (wasDefault) {
+    const remaining = allAccounts(updated);
+    if (remaining[0]) {
+      updated.corriente = updated.corriente.map((a) => ({ ...a, isDefault: a.id === remaining[0].id }));
+      updated.credito = updated.credito.map((a) => ({ ...a, isDefault: a.id === remaining[0].id }));
+    }
+  }
+  await persistAccounts(updated);
+}
+
+async function renameAccount(kind, id, newName) {
+  const trimmed = (newName || '').trim();
+  if (!trimmed) return;
+  const updated = { ...state.accounts, [kind]: currentAccountList(kind).map((a) => (a.id === id ? { ...a, name: trimmed } : a)) };
+  await persistAccounts(updated);
+}
+
+async function setAccountInitialBalance(kind, id, value) {
+  const num = parseFloat(value);
+  const balance = Number.isFinite(num) ? num : 0;
+  const updated = { ...state.accounts, [kind]: currentAccountList(kind).map((a) => (a.id === id ? { ...a, initialBalance: balance } : a)) };
+  await persistAccounts(updated);
+}
+
+async function setDefaultAccount(id) {
+  const updated = {
+    corriente: state.accounts.corriente.map((a) => ({ ...a, isDefault: a.id === id })),
+    credito: state.accounts.credito.map((a) => ({ ...a, isDefault: a.id === id })),
+  };
+  await persistAccounts(updated);
+}
+
+// ---------------------------------------------------------------------
 // Navegación / visibilidad de la app
 // ---------------------------------------------------------------------
 function showApp() {
@@ -490,6 +629,7 @@ function setView(view) {
   $$('.view').forEach((el) => { el.hidden = el.dataset.view !== view; });
   $$('.nav-tabs button').forEach((btn) => btn.classList.toggle('active', btn.dataset.view === view));
   if (view === 'movimientos') renderMovimientos();
+  if (view === 'cuentas') renderAccountsAdmin();
   if (view === 'analisis') renderAnalisis();
   if (view === 'ajustes') renderSettings();
   window.scrollTo(0, 0);
@@ -504,22 +644,61 @@ function totalsForMonth(key) {
   let income = 0, expense = 0;
   for (const t of state.txs) {
     if (monthKey(t.date) !== key) continue;
-    if (t.type === 'income') income += t.amount; else expense += t.amount;
+    if (t.type === 'income') income += t.amount;
+    else if (t.type === 'expense') expense += t.amount;
+    // Las transferencias mueven dinero entre tus propias cuentas — no son
+    // ingreso ni gasto real, así que no cuentan en el balance del mes.
   }
   return { income, expense, balance: income - expense };
 }
 
+// Saldo de una cuenta: su saldo inicial + ingresos - gastos registrados en
+// ella + transferencias entrantes - salientes. Para tarjetas de crédito
+// (kind: 'credito') este mismo número resulta negativo al gastar — la UI
+// lo muestra como deuda (ver accountDebtDisplay).
+function accountBalance(id) {
+  const acct = accountInfo(id);
+  let balance = acct.initialBalance || 0;
+  for (const t of state.txs) {
+    if (t.type === 'transfer') {
+      if (t.fromAccountId === id) balance -= t.amount;
+      if (t.toAccountId === id) balance += t.amount;
+    } else if (t.accountId === id) {
+      if (t.type === 'income') balance += t.amount;
+      else if (t.type === 'expense') balance -= t.amount;
+    }
+  }
+  return balance;
+}
+
 function renderTxRow(t) {
+  const row = document.createElement('div');
+  row.className = 'tx-row';
+
+  if (t.type === 'transfer') {
+    const from = accountInfo(t.fromAccountId);
+    const to = accountInfo(t.toAccountId);
+    row.innerHTML = `
+      <div class="tx-icon">🔁</div>
+      <div class="tx-info">
+        <div class="tx-cat">${escapeHtml(from.name)} → ${escapeHtml(to.name)}</div>
+        <div class="tx-meta">${formatDateShort(t.date)}${t.note ? ' · ' + escapeHtml(t.note) : ''}</div>
+      </div>
+      <div class="tx-amount">${formatMoney(t.amount)}</div>
+    `;
+    row.addEventListener('click', () => openTxModal(t));
+    return row;
+  }
+
   const info = categoryInfo(t.type, t.category);
   const sub = t.subcategory ? (info.subcategories || []).find((s) => s.id === t.subcategory) : null;
   const catLabel = sub ? `${info.label} · ${sub.label}` : info.label;
-  const row = document.createElement('div');
-  row.className = 'tx-row';
+  const acctLabel = t.accountId ? accountInfo(t.accountId).name : '';
   row.innerHTML = `
     <div class="tx-icon">${info.icon}</div>
     <div class="tx-info">
       <div class="tx-cat">${escapeHtml(catLabel)}</div>
-      <div class="tx-meta">${formatDateShort(t.date)}${t.note ? ' · ' + escapeHtml(t.note) : ''}${t.source === 'shortcut' ? ' · ⚡ atajo' : ''}</div>
+      <div class="tx-meta">${formatDateShort(t.date)}${acctLabel ? ' · ' + escapeHtml(acctLabel) : ''}${t.note ? ' · ' + escapeHtml(t.note) : ''}${t.source === 'shortcut' ? ' · ⚡ atajo' : ''}</div>
     </div>
     <div class="tx-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${formatMoney(t.amount)}</div>
   `;
@@ -748,6 +927,77 @@ function renderCategoriesAdmin() {
   categoriesFor('income').forEach((c) => incomeList.appendChild(renderCategoryRow('income', c)));
 }
 
+function renderAccountRow(kind, acct) {
+  const row = document.createElement('div');
+  row.className = 'cat-row';
+
+  const head = document.createElement('div');
+  head.className = 'cat-row-head';
+
+  const icon = document.createElement('span');
+  icon.className = 'cat-emoji-btn';
+  icon.textContent = acct.icon || (kind === 'credito' ? '💳' : '💵');
+
+  const labelInput = document.createElement('input');
+  labelInput.className = 'cat-label-input';
+  labelInput.value = acct.name;
+  labelInput.maxLength = 30;
+  labelInput.addEventListener('change', () => renameAccount(kind, acct.id, labelInput.value));
+
+  const balance = accountBalance(acct.id);
+  const balanceEl = document.createElement('span');
+  balanceEl.className = 'acct-row-balance' + (balance < 0 ? ' negative' : '');
+  balanceEl.textContent = formatMoney(kind === 'credito' ? -balance : balance);
+
+  const defaultBtn = document.createElement('button');
+  defaultBtn.type = 'button';
+  defaultBtn.className = 'acct-default-btn' + (acct.isDefault ? ' active' : '');
+  defaultBtn.textContent = '⭐';
+  defaultBtn.title = acct.isDefault ? 'Cuenta predeterminada' : 'Marcar como predeterminada';
+  defaultBtn.addEventListener('click', () => setDefaultAccount(acct.id));
+
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.className = 'cat-del-btn';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Eliminar cuenta';
+  delBtn.addEventListener('click', () => deleteAccount(kind, acct.id));
+
+  head.append(icon, labelInput, balanceEl, defaultBtn, delBtn);
+  row.appendChild(head);
+
+  const sub = document.createElement('div');
+  sub.className = 'acct-row-sub';
+  const balLabel = document.createElement('span');
+  balLabel.className = 'acct-balance-label';
+  balLabel.textContent = kind === 'credito' ? 'Deuda inicial' : 'Saldo inicial';
+  const balInput = document.createElement('input');
+  balInput.type = 'number';
+  balInput.step = '0.01';
+  balInput.className = 'acct-balance-input';
+  balInput.value = acct.initialBalance || 0;
+  balInput.addEventListener('change', () => setAccountInitialBalance(kind, acct.id, balInput.value));
+  sub.append(balLabel, balInput);
+  row.appendChild(sub);
+
+  return row;
+}
+
+function renderAccountsAdmin() {
+  const corrienteList = $('#corrienteAcctList');
+  const creditoList = $('#creditoAcctList');
+  if (!corrienteList || !creditoList) return;
+  corrienteList.innerHTML = '';
+  creditoList.innerHTML = '';
+  currentAccountList('corriente').forEach((a) => corrienteList.appendChild(renderAccountRow('corriente', a)));
+  currentAccountList('credito').forEach((a) => creditoList.appendChild(renderAccountRow('credito', a)));
+
+  const corrienteTotal = currentAccountList('corriente').reduce((sum, a) => sum + accountBalance(a.id), 0);
+  const creditoTotal = currentAccountList('credito').reduce((sum, a) => sum - accountBalance(a.id), 0);
+  $('#corrienteTotal').textContent = formatMoney(corrienteTotal);
+  $('#creditoTotal').textContent = formatMoney(creditoTotal);
+}
+
 // ---------------------------------------------------------------------
 // Modal de movimiento
 // ---------------------------------------------------------------------
@@ -792,11 +1042,75 @@ function buildSubcategoryGrid() {
   });
 }
 
+function buildAccountGrid() {
+  const grid = $('#txAccountGrid');
+  grid.innerHTML = '';
+  const noneChip = document.createElement('button');
+  noneChip.type = 'button';
+  noneChip.className = 'category-chip' + (!state.txAccount ? ' active' : '');
+  noneChip.innerHTML = '<span class="cat-emoji">❔</span><span class="cat-label">Sin cuenta</span>';
+  noneChip.addEventListener('click', () => {
+    state.txAccount = '';
+    $$('.category-chip', grid).forEach((el) => el.classList.remove('active'));
+    noneChip.classList.add('active');
+  });
+  grid.appendChild(noneChip);
+  accountsList().forEach((a) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'category-chip' + (a.id === state.txAccount ? ' active' : '');
+    chip.innerHTML = `<span class="cat-emoji">${a.icon}</span><span class="cat-label">${a.name}</span>`;
+    chip.addEventListener('click', () => {
+      state.txAccount = a.id;
+      $$('.category-chip', grid).forEach((el) => el.classList.remove('active'));
+      chip.classList.add('active');
+    });
+    grid.appendChild(chip);
+  });
+}
+
+function buildTransferSideGrid(gridSel, selectedId, onSelect) {
+  const grid = $(gridSel);
+  grid.innerHTML = '';
+  accountsList().forEach((a) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'category-chip' + (a.id === selectedId ? ' active' : '');
+    chip.innerHTML = `<span class="cat-emoji">${a.icon}</span><span class="cat-label">${a.name}</span>`;
+    chip.addEventListener('click', () => {
+      onSelect(a.id);
+      $$('.category-chip', grid).forEach((el) => el.classList.remove('active'));
+      chip.classList.add('active');
+    });
+    grid.appendChild(chip);
+  });
+}
+function buildTransferGrids() {
+  buildTransferSideGrid('#txFromAccountGrid', state.txFromAccount, (id) => { state.txFromAccount = id; });
+  buildTransferSideGrid('#txToAccountGrid', state.txToAccount, (id) => { state.txToAccount = id; });
+}
+
+function updateTxFieldVisibility() {
+  const isTransfer = state.txType === 'transfer';
+  $('#txCategoryField').hidden = isTransfer;
+  $('#txAccountField').hidden = isTransfer;
+  $('#txFromAccountField').hidden = !isTransfer;
+  $('#txToAccountField').hidden = !isTransfer;
+  if (isTransfer) $('#txSubcategoryField').hidden = true;
+}
+
 function openTxModal(tx = null) {
   state.editingTxId = tx?.id || null;
   state.txType = tx?.type || 'expense';
-  state.txCategory = tx?.category || categoriesFor(state.txType)[0].id;
-  state.txSubcategory = tx?.subcategory || '';
+
+  if (state.txType === 'transfer') {
+    state.txFromAccount = tx ? (tx.fromAccountId || '') : (currentDefaultAccountId() || '');
+    state.txToAccount = tx ? (tx.toAccountId || '') : '';
+  } else {
+    state.txCategory = tx?.category || categoriesFor(state.txType)[0].id;
+    state.txSubcategory = tx?.subcategory || '';
+    state.txAccount = tx ? (tx.accountId || '') : (currentDefaultAccountId() || '');
+  }
 
   $('#txModalTitle').textContent = tx ? 'Editar movimiento' : 'Nuevo movimiento';
   $('#txAmount').value = tx ? tx.amount : '';
@@ -805,8 +1119,14 @@ function openTxModal(tx = null) {
   $('#txError').hidden = true;
   $('#txDelete').hidden = !tx;
   $$('#txTypeToggle button').forEach((b) => b.classList.toggle('active', b.dataset.type === state.txType));
-  buildCategoryGrid();
-  buildSubcategoryGrid();
+  updateTxFieldVisibility();
+  if (state.txType === 'transfer') {
+    buildTransferGrids();
+  } else {
+    buildCategoryGrid();
+    buildSubcategoryGrid();
+    buildAccountGrid();
+  }
   $('#txModalOverlay').classList.add('open');
 }
 function closeTxModal() {
@@ -822,8 +1142,26 @@ async function handleTxSave() {
   }
   const date = $('#txDate').value || todayISO();
   const note = $('#txNote').value.trim().slice(0, 120);
+
+  let data;
+  if (state.txType === 'transfer') {
+    if (!state.txFromAccount || !state.txToAccount) {
+      $('#txError').textContent = 'Elige la cuenta de origen y destino.';
+      $('#txError').hidden = false;
+      return;
+    }
+    if (state.txFromAccount === state.txToAccount) {
+      $('#txError').textContent = 'La cuenta de origen y destino no pueden ser la misma.';
+      $('#txError').hidden = false;
+      return;
+    }
+    data = { amount, type: 'transfer', fromAccountId: state.txFromAccount, toAccountId: state.txToAccount, date, note };
+  } else {
+    data = { amount, type: state.txType, category: state.txCategory, subcategory: state.txSubcategory || '', accountId: state.txAccount || '', date, note };
+  }
+
   try {
-    await saveTransaction({ amount, type: state.txType, category: state.txCategory, subcategory: state.txSubcategory || '', date, note });
+    await saveTransaction(data);
     closeTxModal();
   } catch {
     $('#txError').textContent = 'No se pudo guardar. Intenta de nuevo.';
@@ -837,6 +1175,7 @@ async function handleTxSave() {
 function renderAll() {
   renderInicio();
   if (state.view === 'movimientos') renderMovimientos();
+  if (state.view === 'cuentas') renderAccountsAdmin();
   if (state.view === 'analisis') renderAnalisis();
   if (state.view === 'ajustes') renderSettings();
 }
@@ -894,12 +1233,20 @@ function wireEvents() {
   });
   $$('#txTypeToggle button').forEach((b) => b.addEventListener('click', () => {
     state.txType = b.dataset.type;
-    state.txCategory = categoriesFor(state.txType)[0].id;
-    state.txSubcategory = '';
     $$('#txTypeToggle button').forEach((x) => x.classList.remove('active'));
     b.classList.add('active');
-    buildCategoryGrid();
-    buildSubcategoryGrid();
+    updateTxFieldVisibility();
+    if (state.txType === 'transfer') {
+      if (!state.txFromAccount) state.txFromAccount = currentDefaultAccountId() || '';
+      buildTransferGrids();
+    } else {
+      state.txCategory = categoriesFor(state.txType)[0].id;
+      state.txSubcategory = '';
+      if (!state.txAccount) state.txAccount = currentDefaultAccountId() || '';
+      buildCategoryGrid();
+      buildSubcategoryGrid();
+      buildAccountGrid();
+    }
   }));
 
   $('#filterMonth').addEventListener('change', (e) => { state.filterMonth = e.target.value; renderMovimientos(); });
@@ -997,6 +1344,17 @@ function wireEvents() {
     $('#incomeCatInput').value = '';
   });
   $('#incomeCatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#incomeCatAddBtn').click(); });
+
+  $('#corrienteAcctAddBtn').addEventListener('click', () => {
+    addAccount('corriente', $('#corrienteAcctInput').value);
+    $('#corrienteAcctInput').value = '';
+  });
+  $('#corrienteAcctInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#corrienteAcctAddBtn').click(); });
+  $('#creditoAcctAddBtn').addEventListener('click', () => {
+    addAccount('credito', $('#creditoAcctInput').value);
+    $('#creditoAcctInput').value = '';
+  });
+  $('#creditoAcctInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#creditoAcctAddBtn').click(); });
 
   $$('#platformTabs button').forEach((b) => b.addEventListener('click', () => {
     $$('#platformTabs button').forEach((x) => x.classList.remove('active'));

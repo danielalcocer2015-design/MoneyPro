@@ -12,11 +12,17 @@
         ".read": "auth !== null && root.child('userTokens').child(auth.uid).val() === $token",
         "$pushId": {
           ".write": true,
-          ".validate": "newData.hasChildren(['amount', 'type', 'category']) && newData.child('amount').isNumber() && newData.child('amount').val() > 0 && (newData.child('type').val() === 'income' || newData.child('type').val() === 'expense') && newData.child('category').isString() && (newData.child('note').val() === null || newData.child('note').isString())"
+          ".validate": "newData.hasChildren(['amount', 'type', 'category']) && newData.child('amount').isNumber() && newData.child('amount').val() > 0 && (newData.child('type').val() === 'income' || newData.child('type').val() === 'expense') && newData.child('category').isString() && (newData.child('note').val() === null || newData.child('note').isString()) && (newData.child('account').val() === null || newData.child('account').isString())"
         }
       }
     },
     "catList": {
+      "$token": {
+        ".read": true,
+        ".write": "auth !== null && root.child('userTokens').child(auth.uid).val() === $token"
+      }
+    },
+    "accountList": {
       "$token": {
         ".read": true,
         ".write": "auth !== null && root.child('userTokens').child(auth.uid).val() === $token"

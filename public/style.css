@@ -202,6 +202,17 @@ a { color: var(--accent); }
 .cat-add-row { display: flex; gap: 8px; }
 .cat-add-input { flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; color: var(--text-primary); font-size: 13.5px; min-width: 0; }
 
+/* ---------- Cuentas ---------- */
+.acct-group-total { font-size: 15px; font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.acct-group-total.debt { color: var(--series-2); }
+.acct-row-balance { font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-primary); }
+.acct-row-balance.negative { color: var(--series-2); }
+.acct-default-btn { background: none; border: none; font-size: 16px; cursor: pointer; padding: 4px; flex-shrink: 0; opacity: 0.35; }
+.acct-default-btn.active { opacity: 1; }
+.acct-row-sub { display: flex; align-items: center; gap: 8px; padding-left: 30px; }
+.acct-balance-input { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; color: var(--text-primary); font-size: 12px; width: 110px; }
+.acct-balance-label { font-size: 11px; color: var(--text-muted); }
+
 /* ---------- Buttons ---------- */
 .btn-primary { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 12px; padding: 13px 18px; font-weight: 800; font-size: 14.5px; cursor: pointer; }
 .btn-secondary { background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); border-radius: 12px; padding: 13px 18px; font-weight: 700; font-size: 14.5px; cursor: pointer; }
@@ -245,9 +256,10 @@ a { color: var(--accent); }
 .form-error { color: var(--danger); font-size: 13px; margin: -6px 0 12px; }
 
 .type-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
-.type-toggle button { flex: 1; padding: 11px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary); font-weight: 700; cursor: pointer; }
+.type-toggle button { flex: 1; padding: 11px 4px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary); font-weight: 700; font-size: 13px; cursor: pointer; }
 .type-toggle button.active[data-type="expense"] { background: color-mix(in srgb, var(--series-2) 20%, transparent); color: var(--series-2); border-color: var(--series-2); }
 .type-toggle button.active[data-type="income"] { background: color-mix(in srgb, var(--series-1) 20%, transparent); color: var(--series-1); border-color: var(--series-1); }
+.type-toggle button.active[data-type="transfer"] { background: color-mix(in srgb, var(--series-7) 20%, transparent); color: var(--series-7); border-color: var(--series-7); }
 
 .category-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .category-chip { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); cursor: pointer; }

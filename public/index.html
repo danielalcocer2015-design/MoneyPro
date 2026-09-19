@@ -59,10 +59,40 @@
           <option value="">Todos</option>
           <option value="expense">Gastos</option>
           <option value="income">Ingresos</option>
+          <option value="transfer">Transferencias</option>
         </select>
       </div>
       <div class="tx-list" id="fullTxList"></div>
       <p class="empty-hint" id="fullEmptyHint" hidden>No hay movimientos en este periodo.</p>
+    </section>
+
+    <section class="view" data-view="cuentas" id="viewCuentas" hidden>
+      <div class="settings-block accounts-block">
+        <div class="section-head">
+          <h2>Cuentas corrientes</h2>
+          <span class="acct-group-total" id="corrienteTotal">$0.00</span>
+        </div>
+        <p class="settings-hint">Efectivo, débito, ahorro — dinero que tienes.</p>
+        <div class="cat-list" id="corrienteAcctList"></div>
+        <div class="cat-add-row">
+          <input type="text" class="cat-add-input" id="corrienteAcctInput" placeholder="Nueva cuenta…" maxlength="30">
+          <button class="chip-btn" id="corrienteAcctAddBtn">+ Agregar</button>
+        </div>
+      </div>
+
+      <div class="settings-block accounts-block">
+        <div class="section-head">
+          <h2>Tarjetas de crédito</h2>
+          <span class="acct-group-total debt" id="creditoTotal">$0.00</span>
+        </div>
+        <p class="settings-hint">Dinero que debes — el saldo se muestra como deuda.</p>
+        <div class="cat-list" id="creditoAcctList"></div>
+        <div class="cat-add-row">
+          <input type="text" class="cat-add-input" id="creditoAcctInput" placeholder="Nueva tarjeta…" maxlength="30">
+          <button class="chip-btn" id="creditoAcctAddBtn">+ Agregar</button>
+        </div>
+      </div>
+      <p class="settings-hint small">Toca ⭐ para marcar la cuenta que se preselecciona al agregar un movimiento nuevo. El campo «Saldo inicial» ajusta el punto de partida del saldo calculado.</p>
     </section>
 
     <section class="view" data-view="analisis" id="viewAnalisis" hidden>
@@ -181,6 +211,7 @@
   <nav class="nav-tabs" id="navTabs">
     <button class="active" data-view="inicio"><span class="nav-icon">🏠</span>Inicio</button>
     <button data-view="movimientos"><span class="nav-icon">📋</span>Movimientos</button>
+    <button data-view="cuentas"><span class="nav-icon">🏦</span>Cuentas</button>
     <button data-view="analisis"><span class="nav-icon">📊</span>Análisis</button>
     <button data-view="ajustes"><span class="nav-icon">⚙️</span>Ajustes</button>
   </nav>
@@ -222,18 +253,31 @@
     <div class="type-toggle" id="txTypeToggle">
       <button type="button" class="active" data-type="expense">Gasto</button>
       <button type="button" data-type="income">Ingreso</button>
+      <button type="button" data-type="transfer">Transferencia</button>
     </div>
     <div class="field">
       <label for="txAmount">Monto</label>
       <input type="number" id="txAmount" inputmode="decimal" step="0.01" min="0.01" placeholder="0.00">
     </div>
-    <div class="field">
+    <div class="field" id="txCategoryField">
       <label>Categoría</label>
       <div class="category-grid" id="txCategoryGrid"></div>
     </div>
     <div class="field" id="txSubcategoryField" hidden>
       <label>Subcategoría (opcional)</label>
       <div class="category-grid" id="txSubcategoryGrid"></div>
+    </div>
+    <div class="field" id="txAccountField">
+      <label>Cuenta</label>
+      <div class="category-grid" id="txAccountGrid"></div>
+    </div>
+    <div class="field" id="txFromAccountField" hidden>
+      <label>De</label>
+      <div class="category-grid" id="txFromAccountGrid"></div>
+    </div>
+    <div class="field" id="txToAccountField" hidden>
+      <label>A</label>
+      <div class="category-grid" id="txToAccountGrid"></div>
     </div>
     <div class="field-row">
       <div class="field">

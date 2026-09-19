@@ -18,6 +18,14 @@ Firestore, y Realtime Database para el atajo). Funciona completo en el
 - **Categorías personalizadas**: agrega, renombra o borra tus propias
   categorías y subcategorías (Ajustes → Categorías) — no vienen fijas en el
   código, cada cuenta tiene las suyas.
+- **Cuentas**: pestaña dedicada con dos grupos — **cuentas corrientes**
+  (efectivo, débito, ahorro) y **tarjetas de crédito** — cada una con saldo
+  calculado en vivo a partir de tus movimientos y un saldo inicial editable.
+  Marca una cuenta como predeterminada (⭐) para que se preseleccione al
+  agregar un movimiento nuevo.
+- **Transferencias**: un tercer tipo de movimiento (junto a Gasto/Ingreso)
+  para mover dinero entre tus propias cuentas — ajusta el saldo de origen y
+  destino sin contar como ingreso ni gasto real.
 - **Ajustes**: cuenta, moneda (MXN/USD/EUR), tema claro/oscuro, categorías,
   y la configuración del atajo (URLs + plantilla JSON + token, instrucciones
   paso a paso para iPhone y Android).
@@ -58,6 +66,14 @@ mismo token — a `catList/TU_TOKEN` en Realtime Database cada vez que
 cambian. El atajo hace un `GET` a esa ruta antes de mostrar el menú de
 categorías, así siempre ve la lista actual sin que tengas que editar el
 atajo cuando agregas una nueva.
+
+Las cuentas funcionan igual, en `accountList/TU_TOKEN` (ver `public/accounts.js`
+y `syncAccountListToRtdb` en `public/app.js`), y el cuerpo del buzón acepta
+un campo opcional `"account"` con el nombre de la cuenta — si lo mandas y
+coincide con alguna de tus cuentas, el movimiento queda asignado a ella al
+sincronizar; si no lo mandas (como en el atajo de las instrucciones de abajo,
+que todavía no lo pide), el movimiento queda sin cuenta y lo asignas a mano
+desde Movimientos.
 
 > **¿Prefieres un webhook con URL simple (`/api/add?amount=...`) y que el
 > gasto aparezca al instante sin abrir la app?** Eso requiere Cloud
