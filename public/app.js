@@ -1021,16 +1021,46 @@ function renderCategoriesAdmin() {
   categoriesFor('income').forEach((c) => incomeList.appendChild(renderCategoryRow('income', c)));
 }
 
+const ACCOUNT_EMOJI_PRESET = ['💵', '💳', '🏦', '💰', '👛', '🐷', '💷', '💶', '💴', '📱', '🪙', '💎', '🏧', '📈'];
+
 function renderAccountRow(kind, acct) {
   const row = document.createElement('div');
-  row.className = 'cat-row';
+  row.className = 'cat-row acct-row-clickable';
+  row.title = 'Ver movimientos de esta cuenta';
+  // Toda la fila abre el detalle de la cuenta, salvo los controles que ya
+  // tienen su propia acción (renombrar, ícono, favorita, borrar, saldo).
+  row.addEventListener('click', (e) => {
+    if (e.target.closest('input, button')) return;
+    openAccountDetail(acct.id);
+  });
 
   const head = document.createElement('div');
   head.className = 'cat-row-head';
 
-  const icon = document.createElement('span');
-  icon.className = 'cat-emoji-btn';
-  icon.textContent = acct.icon || (kind === 'credito' ? '💳' : '💵');
+  const iconBtn = document.createElement('button');
+  iconBtn.type = 'button';
+  iconBtn.className = 'cat-emoji-btn';
+  iconBtn.textContent = acct.icon || (kind === 'credito' ? '💳' : '💵');
+  iconBtn.title = 'Cambiar ícono';
+  iconBtn.addEventListener('click', () => {
+    const existing = row.querySelector('.emoji-picker');
+    closeEmojiPicker();
+    if (existing) return; // ya estaba abierto: solo lo cerramos
+    const picker = document.createElement('div');
+    picker.className = 'emoji-picker';
+    ACCOUNT_EMOJI_PRESET.forEach((emoji) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = emoji;
+      b.addEventListener('click', async () => {
+        closeEmojiPicker();
+        const updated = { ...state.accounts, [kind]: currentAccountList(kind).map((a) => (a.id === acct.id ? { ...a, icon: emoji } : a)) };
+        await persistAccounts(updated);
+      });
+      picker.appendChild(b);
+    });
+    row.appendChild(picker);
+  });
 
   const labelInput = document.createElement('input');
   labelInput.className = 'cat-label-input';
@@ -1039,12 +1069,9 @@ function renderAccountRow(kind, acct) {
   labelInput.addEventListener('change', () => renameAccount(kind, acct.id, labelInput.value));
 
   const balance = accountBalance(acct.id);
-  const balanceEl = document.createElement('button');
-  balanceEl.type = 'button';
+  const balanceEl = document.createElement('span');
   balanceEl.className = 'acct-row-balance' + (balance < 0 ? ' negative' : '');
   balanceEl.textContent = formatMoney(kind === 'credito' ? -balance : balance);
-  balanceEl.title = 'Ver movimientos de esta cuenta';
-  balanceEl.addEventListener('click', () => openAccountDetail(acct.id));
 
   const defaultBtn = document.createElement('button');
   defaultBtn.type = 'button';
@@ -1060,7 +1087,7 @@ function renderAccountRow(kind, acct) {
   delBtn.title = 'Eliminar cuenta';
   delBtn.addEventListener('click', () => deleteAccount(kind, acct.id));
 
-  head.append(icon, labelInput, balanceEl, defaultBtn, delBtn);
+  head.append(iconBtn, labelInput, balanceEl, defaultBtn, delBtn);
   row.appendChild(head);
 
   const sub = document.createElement('div');
@@ -1093,6 +1120,41 @@ function renderAccountsAdmin() {
   const creditoTotal = currentAccountList('credito').reduce((sum, a) => sum - accountBalance(a.id), 0);
   $('#corrienteTotal').textContent = formatMoney(corrienteTotal);
   $('#creditoTotal').textContent = formatMoney(creditoTotal);
+  renderAccountSummary(corrienteTotal, creditoTotal);
+}
+
+// Barras arriba de Cuentas: total en cuentas corrientes vs. total en
+// tarjetas de crédito, cada una proporcional a la más grande de las dos
+// (mismo criterio que la gráfica de barras de Análisis). Tocarlas abre
+// el desglose de activos vs. pasivos — ver openAssetsModal.
+function renderAccountSummary(corrienteTotal, creditoTotal) {
+  const corrienteEl = $('#acctSummaryCorrienteValue');
+  if (!corrienteEl) return;
+  corrienteEl.textContent = formatMoney(corrienteTotal);
+  $('#acctSummaryCreditoValue').textContent = formatMoney(creditoTotal);
+  const corrienteAbs = Math.max(0, corrienteTotal);
+  const creditoAbs = Math.max(0, creditoTotal);
+  const max = Math.max(1, corrienteAbs, creditoAbs);
+  $('#acctSummaryCorrienteFill').style.width = `${Math.max((corrienteAbs / max) * 100, corrienteAbs > 0 ? 3 : 0)}%`;
+  $('#acctSummaryCreditoFill').style.width = `${Math.max((creditoAbs / max) * 100, creditoAbs > 0 ? 3 : 0)}%`;
+}
+
+function openAssetsModal() {
+  const corrienteTotal = currentAccountList('corriente').reduce((sum, a) => sum + accountBalance(a.id), 0);
+  const creditoTotal = currentAccountList('credito').reduce((sum, a) => sum - accountBalance(a.id), 0);
+  const data = [
+    { id: 'activos', label: 'Activos', icon: '💰', value: Math.max(0, corrienteTotal), seriesIndex: 0 },
+    { id: 'pasivos', label: 'Pasivos', icon: '💳', value: Math.max(0, creditoTotal), seriesIndex: 3 },
+  ];
+  renderDonutChart($('#assetsChartWrap'), data, formatMoney, {
+    centerLabel: 'Activo neto',
+    centerValue: corrienteTotal - creditoTotal,
+    emptyMessage: 'Agrega cuentas para ver tus activos y pasivos.',
+  });
+  $('#assetsModalOverlay').classList.add('open');
+}
+function closeAssetsModal() {
+  $('#assetsModalOverlay').classList.remove('open');
 }
 
 // ---------------------------------------------------------------------
@@ -1588,6 +1650,10 @@ function wireEvents() {
     $('#creditoAcctInput').value = '';
   });
   $('#creditoAcctInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#creditoAcctAddBtn').click(); });
+
+  $('#acctSummaryBtn').addEventListener('click', openAssetsModal);
+  $('#assetsModalClose').addEventListener('click', closeAssetsModal);
+  $('#assetsModalOverlay').addEventListener('click', (e) => { if (e.target.id === 'assetsModalOverlay') closeAssetsModal(); });
 
   $$('#platformTabs button').forEach((b) => b.addEventListener('click', () => {
     $$('#platformTabs button').forEach((x) => x.classList.remove('active'));

@@ -71,6 +71,21 @@
     </section>
 
     <section class="view" data-view="cuentas" id="viewCuentas" hidden>
+      <button type="button" class="acct-summary" id="acctSummaryBtn" title="Ver activos vs. pasivos">
+        <div class="acct-summary-row">
+          <span class="acct-summary-dot" style="background:var(--series-1)"></span>
+          <span class="acct-summary-label">Cuentas corrientes</span>
+          <span class="acct-summary-value" id="acctSummaryCorrienteValue">$0.00</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" id="acctSummaryCorrienteFill" style="background:var(--series-1)"></div></div>
+        <div class="acct-summary-row">
+          <span class="acct-summary-dot" style="background:var(--series-4)"></span>
+          <span class="acct-summary-label">Tarjetas de crédito</span>
+          <span class="acct-summary-value" id="acctSummaryCreditoValue">$0.00</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" id="acctSummaryCreditoFill" style="background:var(--series-4)"></div></div>
+      </button>
+
       <div class="settings-block accounts-block">
         <div class="section-head">
           <h2>Cuentas corrientes</h2>
@@ -315,6 +330,16 @@
       <button class="btn-primary" id="txSave">Guardar</button>
     </div>
     <button class="reset-link" id="txDelete" hidden>Eliminar movimiento</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="assetsModalOverlay">
+  <div class="modal">
+    <h4>Activos vs. pasivos</h4>
+    <div id="assetsChartWrap" class="chart-body"></div>
+    <div class="modal-actions">
+      <button class="btn-primary full" id="assetsModalClose">Cerrar</button>
+    </div>
   </div>
 </div>
 

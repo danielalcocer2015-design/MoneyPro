@@ -211,10 +211,17 @@ a { color: var(--accent); }
 .cat-add-input { flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; color: var(--text-primary); font-size: 13.5px; min-width: 0; }
 
 /* ---------- Cuentas ---------- */
+.acct-summary { display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left; background: var(--surface-1); border: 1px solid var(--border); border-radius: 16px; padding: 16px; cursor: pointer; font-family: inherit; }
+.acct-summary:active { background: var(--surface-2); }
+.acct-summary-row { display: flex; align-items: center; gap: 8px; }
+.acct-summary-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+.acct-summary-label { flex: 1; min-width: 0; font-size: 13px; color: var(--text-secondary); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-summary-value { font-size: 13.5px; font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .acct-group-total { font-size: 15px; font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .acct-group-total.debt { color: var(--series-2); }
-.acct-row-balance { font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-primary); background: none; border: none; padding: 4px 2px; cursor: pointer; text-decoration: underline; text-decoration-color: transparent; }
-.acct-row-balance:hover, .acct-row-balance:active { text-decoration-color: currentColor; }
+.acct-row-clickable { cursor: pointer; }
+.acct-row-clickable:active { background: var(--surface-1); }
+.acct-row-balance { font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-primary); padding: 4px 2px; }
 .acct-row-balance.negative { color: var(--series-2); }
 .acct-default-btn { background: none; border: none; font-size: 16px; cursor: pointer; padding: 4px; flex-shrink: 0; opacity: 0.35; }
 .acct-default-btn.active { opacity: 1; }

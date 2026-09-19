@@ -12,12 +12,13 @@ function cssVar(name) {
 // Donut: gastos por categoría de un mes
 // data: [{ id, label, icon, value, seriesIndex }] ya ordenado desc
 // ---------------------------------------------------------------------
-export function renderDonutChart(container, data, formatMoney) {
+export function renderDonutChart(container, data, formatMoney, opts = {}) {
+  const { centerLabel = 'Total gastado', centerValue = null, emptyMessage = 'Sin gastos registrados este mes.' } = opts;
   container.innerHTML = '';
   const total = data.reduce((s, d) => s + d.value, 0);
 
   if (!total) {
-    container.innerHTML = '<p class="chart-empty">Sin gastos registrados este mes.</p>';
+    container.innerHTML = `<p class="chart-empty">${emptyMessage}</p>`;
     return;
   }
 
@@ -45,8 +46,8 @@ export function renderDonutChart(container, data, formatMoney) {
   wrap.innerHTML = `
     <svg viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="Gastos por categoría">${circles}</svg>
     <div class="donut-center">
-      <div class="donut-center-label">Total gastado</div>
-      <div class="donut-center-value">${formatMoney(total)}</div>
+      <div class="donut-center-label">${centerLabel}</div>
+      <div class="donut-center-value">${formatMoney(centerValue !== null ? centerValue : total)}</div>
     </div>
   `;
   container.appendChild(wrap);
