@@ -56,6 +56,11 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+/* El atributo hidden debe ganar siempre, sin importar qué otra regla de
+   clase (.view, .app, etc.) también le ponga display a ese elemento —
+   si no, dos reglas con la misma especificidad quedan a merced del orden
+   en el archivo y un elemento "oculto" se sigue viendo. */
+[hidden] { display: none !important; }
 body {
   background: var(--bg);
   color: var(--text-primary);
