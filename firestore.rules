@@ -40,6 +40,12 @@ service cloud.firestore {
       match /meta/accounts {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
+
+      // Presupuestos por categoría de gasto (un solo documento, mapa
+      // categoriaId -> {amount, period} — ver public/budgets.js).
+      match /meta/budgets {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
     }
   }
 }

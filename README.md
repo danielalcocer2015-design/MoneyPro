@@ -12,7 +12,6 @@ Firestore, y Realtime Database para el atajo). Funciona completo en el
 ## Funciones
 
 - **Inicio**: balance del mes, ingresos y gastos, movimientos recientes.
-- **Movimientos**: historial completo con filtros por mes y tipo, alta/edición/borrado.
 - **Análisis**: gráfica de gastos por categoría (mes seleccionable) y comparativa
   de ingresos vs. gastos de los últimos 6 meses.
 - **Categorías personalizadas**: agrega, renombra o borra tus propias
@@ -22,10 +21,19 @@ Firestore, y Realtime Database para el atajo). Funciona completo en el
   (efectivo, débito, ahorro) y **tarjetas de crédito** — cada una con saldo
   calculado en vivo a partir de tus movimientos y un saldo inicial editable.
   Marca una cuenta como predeterminada (⭐) para que se preseleccione al
-  agregar un movimiento nuevo.
+  agregar un movimiento nuevo. Toca el saldo de una cuenta para ver su
+  historial completo de movimientos (con filtros por mes y tipo) — los
+  movimientos ya no tienen una pestaña propia, viven dentro de cada cuenta.
 - **Transferencias**: un tercer tipo de movimiento (junto a Gasto/Ingreso)
   para mover dinero entre tus propias cuentas — ajusta el saldo de origen y
   destino sin contar como ingreso ni gasto real.
+- **Presupuesto**: ponle un monto y una frecuencia (semanal, quincenal,
+  mensual o anual) a cada categoría de gasto que quieras controlar — la app
+  la convierte sola a su equivalente mensual, así puedes definir el
+  presupuesto en la frecuencia que prefieras y siempre se compara contra lo
+  gastado en el mes en curso. El ícono de la categoría lleva un anillo que
+  se va llenando según gastas, y cambia de color (verde → amarillo → rojo)
+  conforme te acercas o te pasas del límite.
 - **Ajustes**: cuenta, moneda (MXN/USD/EUR), tema claro/oscuro, categorías,
   y la configuración del atajo (URLs + plantilla JSON + token, instrucciones
   paso a paso para iPhone y Android).
@@ -233,6 +241,8 @@ public/
   style.css              tema oscuro/claro vía variables CSS
   app.js                 lógica de la app (auth, Firestore, Realtime DB, modo demo)
   categories.js           categorías por defecto (semilla) + helpers
+  accounts.js              cuentas por defecto (semilla) + helpers
+  budgets.js               periodos de presupuesto + conversión a mensual
   charts.js               donut y barras dibujados a mano (SVG/HTML)
   firebase-config.js      config de Firebase (placeholder hasta configurarlo)
   manifest.json / sw.js    PWA instalable

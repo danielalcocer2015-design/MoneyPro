@@ -46,24 +46,28 @@
 
       <div class="section-head">
         <h2>Movimientos recientes</h2>
-        <button class="link-btn" data-nav="movimientos">Ver todos</button>
       </div>
       <div class="tx-list" id="recentTxList"></div>
       <p class="empty-hint" id="recentEmptyHint" hidden>Aún no tienes movimientos. Toca el botón + para agregar el primero, o configura tu atajo en Ajustes.</p>
     </section>
 
-    <section class="view" data-view="movimientos" id="viewMovimientos" hidden>
+    <section class="view" data-view="cuenta-detalle" id="viewCuentaDetalle" hidden>
+      <button class="link-btn" id="acctDetailBack">‹ Cuentas</button>
+      <div class="balance-card" id="acctDetailCard">
+        <div class="balance-label" id="acctDetailLabel">Cuenta</div>
+        <div class="balance-amount" id="acctDetailBalance">$0.00</div>
+      </div>
       <div class="filters-row">
-        <select class="select-field" id="filterMonth"></select>
-        <select class="select-field" id="filterType">
+        <select class="select-field" id="acctDetailFilterMonth"></select>
+        <select class="select-field" id="acctDetailFilterType">
           <option value="">Todos</option>
           <option value="expense">Gastos</option>
           <option value="income">Ingresos</option>
           <option value="transfer">Transferencias</option>
         </select>
       </div>
-      <div class="tx-list" id="fullTxList"></div>
-      <p class="empty-hint" id="fullEmptyHint" hidden>No hay movimientos en este periodo.</p>
+      <div class="tx-list" id="acctDetailTxList"></div>
+      <p class="empty-hint" id="acctDetailEmptyHint" hidden>No hay movimientos en este periodo para esta cuenta.</p>
     </section>
 
     <section class="view" data-view="cuentas" id="viewCuentas" hidden>
@@ -93,6 +97,18 @@
         </div>
       </div>
       <p class="settings-hint small">Toca ⭐ para marcar la cuenta que se preselecciona al agregar un movimiento nuevo. El campo «Saldo inicial» ajusta el punto de partida del saldo calculado.</p>
+    </section>
+
+    <section class="view" data-view="presupuesto" id="viewPresupuesto" hidden>
+      <div class="balance-card" id="budgetSummaryCard" hidden>
+        <div class="balance-label">Presupuesto de <span id="budgetSummaryMonth"></span></div>
+        <div class="balance-amount" id="budgetSummaryAmount">$0.00</div>
+        <div class="balance-sub">
+          <span class="pill" id="budgetSummaryPill">Gastado <strong id="budgetSummarySpent">$0.00</strong></span>
+        </div>
+      </div>
+      <p class="settings-hint">Ponle un monto y una frecuencia a las categorías que quieras controlar — la app la convierte sola a su equivalente mensual. El círculo se llena según gastas ese mes.</p>
+      <div class="budget-list" id="budgetList"></div>
     </section>
 
     <section class="view" data-view="analisis" id="viewAnalisis" hidden>
@@ -214,8 +230,8 @@
 
   <nav class="nav-tabs" id="navTabs">
     <button class="active" data-view="inicio"><span class="nav-icon">🏠</span>Inicio</button>
-    <button data-view="movimientos"><span class="nav-icon">📋</span>Movimientos</button>
     <button data-view="cuentas"><span class="nav-icon">🏦</span>Cuentas</button>
+    <button data-view="presupuesto"><span class="nav-icon">🎯</span>Presupuesto</button>
     <button data-view="analisis"><span class="nav-icon">📊</span>Análisis</button>
     <button data-view="ajustes"><span class="nav-icon">⚙️</span>Ajustes</button>
   </nav>

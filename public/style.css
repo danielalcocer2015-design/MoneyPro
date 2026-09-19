@@ -213,13 +213,30 @@ a { color: var(--accent); }
 /* ---------- Cuentas ---------- */
 .acct-group-total { font-size: 15px; font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .acct-group-total.debt { color: var(--series-2); }
-.acct-row-balance { font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-primary); }
+.acct-row-balance { font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text-primary); background: none; border: none; padding: 4px 2px; cursor: pointer; text-decoration: underline; text-decoration-color: transparent; }
+.acct-row-balance:hover, .acct-row-balance:active { text-decoration-color: currentColor; }
 .acct-row-balance.negative { color: var(--series-2); }
 .acct-default-btn { background: none; border: none; font-size: 16px; cursor: pointer; padding: 4px; flex-shrink: 0; opacity: 0.35; }
 .acct-default-btn.active { opacity: 1; }
 .acct-row-sub { display: flex; align-items: center; gap: 8px; padding-left: 30px; }
 .acct-balance-input { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; color: var(--text-primary); font-size: 12px; width: 110px; }
 .acct-balance-label { font-size: 11px; color: var(--text-muted); }
+
+/* ---------- Presupuesto ---------- */
+.budget-list { display: flex; flex-direction: column; gap: 10px; }
+.budget-row { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.budget-row-head { display: flex; align-items: center; gap: 12px; }
+.budget-ring { position: relative; width: 44px; height: 44px; flex-shrink: 0; }
+.budget-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.budget-ring circle { fill: none; stroke-width: 3.5; }
+.budget-ring-track { stroke: var(--surface-2); }
+.budget-ring-progress { stroke-linecap: round; transition: stroke-dashoffset 0.3s ease; }
+.budget-ring-icon { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+.budget-row-info { flex: 1; min-width: 0; }
+.budget-row-title { font-weight: 700; font-size: 14px; }
+.budget-row-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.budget-row-edit { display: flex; gap: 8px; }
+.budget-row-edit .select-field { flex: 1; }
 
 /* ---------- Buttons ---------- */
 .btn-primary { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 12px; padding: 13px 18px; font-weight: 800; font-size: 14.5px; cursor: pointer; }

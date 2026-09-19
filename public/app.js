@@ -1,6 +1,7 @@
 import { firebaseConfig, firebaseEnabled } from './firebase-config.js';
 import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES, FALLBACK_ID, defaultCategoryDoc, slugify, findCategory } from './categories.js';
 import { defaultAccountDoc, slugifyAccount, allAccounts, findAccount, defaultAccountId } from './accounts.js';
+import { BUDGET_PERIODS, DEFAULT_BUDGET_PERIOD, monthlyEquivalent, defaultBudgetDoc } from './budgets.js';
 import { renderDonutChart, renderBarChart } from './charts.js';
 
 const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/10.13.0';
@@ -14,8 +15,10 @@ const state = {
   webhookToken: null,
   categories: defaultCategoryDoc(), // { expense: [...], income: [...] } — personalizable por usuario
   accounts: defaultAccountDoc(),    // { corriente: [...], credito: [...] } — personalizable por usuario
+  budgets: defaultBudgetDoc(),      // { [categoriaId]: { amount, period } } — presupuesto por categoría de gasto
   txs: [],           // { id, amount, type, category, subcategory, accountId, fromAccountId, toAccountId, note, date, source }
   view: 'inicio',
+  selectedAccountId: null, // cuenta que se está viendo en el detalle (vista "cuenta-detalle")
   filterMonth: '',
   filterType: '',
   analisisMonth: '',
@@ -34,6 +37,7 @@ let unsubTxs = null;
 let unsubToken = null;
 let unsubCategories = null;
 let unsubAccounts = null;
+let unsubBudgets = null;
 let generatingToken = false;
 
 // Categorías/subcategorías: leen de state.categories (personalizables),
@@ -55,6 +59,17 @@ function accountInfo(id) {
 }
 function currentDefaultAccountId() {
   return defaultAccountId(state.accounts);
+}
+
+// Presupuestos: leen de state.budgets, { [categoriaId]: {amount, period} }.
+// budgetSpentForCategory suma los GASTOS de esa categoría en el mes dado
+// (misma noción de "mes" que el resto de la app — ver monthKey/currentMonthKey).
+function budgetSpentForCategory(categoryId, key) {
+  let spent = 0;
+  for (const t of state.txs) {
+    if (t.type === 'expense' && t.category === categoryId && monthKey(t.date) === key) spent += t.amount;
+  }
+  return spent;
 }
 
 // ---------------------------------------------------------------------
@@ -205,6 +220,14 @@ async function startReal(user) {
     renderAll();
   });
 
+  const budgetRef = fb.fs.doc(fb.db, 'users', user.uid, 'meta', 'budgets');
+  unsubBudgets?.();
+  unsubBudgets = fb.fs.onSnapshot(budgetRef, (snap) => {
+    const data = snap.data();
+    state.budgets = data || defaultBudgetDoc();
+    renderAll();
+  });
+
   unsubToken?.();
   unsubToken = fb.rt.onValue(fb.rt.ref(fb.rtdb, `userTokens/${user.uid}`), (snap) => {
     state.webhookToken = snap.val() || null;
@@ -227,6 +250,7 @@ function stopReal() {
   unsubToken?.(); unsubToken = null;
   unsubCategories?.(); unsubCategories = null;
   unsubAccounts?.(); unsubAccounts = null;
+  unsubBudgets?.(); unsubBudgets = null;
   state.user = null;
   state.txs = [];
   state.webhookToken = null;
@@ -408,12 +432,22 @@ function demoAccounts() {
     return defaultAccountDoc();
   }
 }
+function demoBudgets() {
+  const raw = localStorage.getItem('moneypro_demo_budgets');
+  if (!raw) return defaultBudgetDoc();
+  try {
+    return JSON.parse(raw) || defaultBudgetDoc();
+  } catch {
+    return defaultBudgetDoc();
+  }
+}
 function startDemo() {
   state.demo = true;
   state.user = null;
   state.currency = localStorage.getItem('moneypro_demo_currency') || 'MXN';
   state.categories = demoCategories();
   state.accounts = demoAccounts();
+  state.budgets = demoBudgets();
   let txs = demoTxs();
   if (!txs.length) txs = seedDemoData();
   state.txs = txs;
@@ -613,6 +647,30 @@ async function setDefaultAccount(id) {
 }
 
 // ---------------------------------------------------------------------
+// CRUD de presupuestos (rama demo o real)
+// ---------------------------------------------------------------------
+async function persistBudgets(newBudgets) {
+  state.budgets = newBudgets;
+  if (state.demo) {
+    localStorage.setItem('moneypro_demo_budgets', JSON.stringify(newBudgets));
+  } else if (fb && state.user) {
+    await fb.fs.setDoc(fb.fs.doc(fb.db, 'users', state.user.uid, 'meta', 'budgets'), newBudgets);
+  }
+  renderAll();
+}
+
+async function setBudget(categoryId, amount, period) {
+  const updated = { ...state.budgets, [categoryId]: { amount, period } };
+  await persistBudgets(updated);
+}
+
+async function clearBudget(categoryId) {
+  const updated = { ...state.budgets };
+  delete updated[categoryId];
+  await persistBudgets(updated);
+}
+
+// ---------------------------------------------------------------------
 // Navegación / visibilidad de la app
 // ---------------------------------------------------------------------
 function showApp() {
@@ -627,13 +685,17 @@ function hideApp() {
 function setView(view) {
   state.view = view;
   $$('.view').forEach((el) => { el.hidden = el.dataset.view !== view; });
-  $$('.nav-tabs button').forEach((btn) => btn.classList.toggle('active', btn.dataset.view === view));
-  // El + agrega un movimiento — no aplica en Cuentas (tiene sus propios
-  // botones "+ Agregar") ni en Ajustes, y ahí solo estorbaba tapando el
-  // contenido de más abajo.
-  $('#addFab').hidden = view === 'cuentas' || view === 'ajustes';
-  if (view === 'movimientos') renderMovimientos();
+  // El detalle de una cuenta no tiene su propio botón en la barra de
+  // abajo — mientras se ve, dejamos "Cuentas" marcada como activa.
+  const navMatch = view === 'cuenta-detalle' ? 'cuentas' : view;
+  $$('.nav-tabs button').forEach((btn) => btn.classList.toggle('active', btn.dataset.view === navMatch));
+  // El + agrega un movimiento — no aplica en Cuentas, Presupuesto ni
+  // Ajustes (esas pantallas ya tienen sus propios controles), y ahí solo
+  // estorbaba tapando el contenido de más abajo.
+  $('#addFab').hidden = view === 'cuentas' || view === 'ajustes' || view === 'presupuesto';
+  if (view === 'cuenta-detalle') renderAccountDetail();
   if (view === 'cuentas') renderAccountsAdmin();
+  if (view === 'presupuesto') renderPresupuesto();
   if (view === 'analisis') renderAnalisis();
   if (view === 'ajustes') renderSettings();
   window.scrollTo(0, 0);
@@ -732,7 +794,7 @@ function renderInicio() {
 }
 
 // ---------------------------------------------------------------------
-// Render: Movimientos
+// Render: detalle de cuenta (movimientos de una sola cuenta)
 // ---------------------------------------------------------------------
 function distinctMonths() {
   const set = new Set(state.txs.map((t) => monthKey(t.date)));
@@ -740,21 +802,41 @@ function distinctMonths() {
   return Array.from(set).sort().reverse();
 }
 
-function renderMovimientos() {
-  const monthSel = $('#filterMonth');
+// Los movimientos ya no tienen su propia pestaña — se ven desde adentro
+// de cada cuenta (Cuentas → tocar una cuenta), ya que Inicio ya muestra
+// los recientes. Una transferencia "pertenece" a una cuenta si es el
+// origen o el destino.
+function txInvolvesAccount(t, accountId) {
+  if (t.type === 'transfer') return t.fromAccountId === accountId || t.toAccountId === accountId;
+  return t.accountId === accountId;
+}
+
+function openAccountDetail(accountId) {
+  state.selectedAccountId = accountId;
+  setView('cuenta-detalle');
+}
+
+function renderAccountDetail() {
+  const acct = accountInfo(state.selectedAccountId);
+  $('#acctDetailLabel').textContent = `${acct.icon} ${acct.name}`;
+  const balance = accountBalance(state.selectedAccountId);
+  $('#acctDetailBalance').textContent = formatMoney(acct.kind === 'credito' ? -balance : balance);
+
+  const monthSel = $('#acctDetailFilterMonth');
   const months = distinctMonths();
   monthSel.innerHTML = '<option value="">Todos los meses</option>' + months.map((m) => `<option value="${m}">${monthLabel(m)}</option>`).join('');
   monthSel.value = state.filterMonth;
+  $('#acctDetailFilterType').value = state.filterType;
 
-  let list = [...state.txs];
+  let list = state.txs.filter((t) => txInvolvesAccount(t, state.selectedAccountId));
   if (state.filterMonth) list = list.filter((t) => monthKey(t.date) === state.filterMonth);
   if (state.filterType) list = list.filter((t) => t.type === state.filterType);
   list.sort((a, b) => b.date.localeCompare(a.date));
 
-  const container = $('#fullTxList');
+  const container = $('#acctDetailTxList');
   container.innerHTML = '';
   list.forEach((t) => container.appendChild(renderTxRow(t)));
-  $('#fullEmptyHint').hidden = list.length > 0;
+  $('#acctDetailEmptyHint').hidden = list.length > 0;
 }
 
 // ---------------------------------------------------------------------
@@ -957,9 +1039,12 @@ function renderAccountRow(kind, acct) {
   labelInput.addEventListener('change', () => renameAccount(kind, acct.id, labelInput.value));
 
   const balance = accountBalance(acct.id);
-  const balanceEl = document.createElement('span');
+  const balanceEl = document.createElement('button');
+  balanceEl.type = 'button';
   balanceEl.className = 'acct-row-balance' + (balance < 0 ? ' negative' : '');
   balanceEl.textContent = formatMoney(kind === 'credito' ? -balance : balance);
+  balanceEl.title = 'Ver movimientos de esta cuenta';
+  balanceEl.addEventListener('click', () => openAccountDetail(acct.id));
 
   const defaultBtn = document.createElement('button');
   defaultBtn.type = 'button';
@@ -1008,6 +1093,125 @@ function renderAccountsAdmin() {
   const creditoTotal = currentAccountList('credito').reduce((sum, a) => sum - accountBalance(a.id), 0);
   $('#corrienteTotal').textContent = formatMoney(corrienteTotal);
   $('#creditoTotal').textContent = formatMoney(creditoTotal);
+}
+
+// ---------------------------------------------------------------------
+// Render: Presupuesto
+// ---------------------------------------------------------------------
+// Anillo SVG alrededor del ícono de la categoría: se va llenando según
+// % de lo presupuestado (equivalente mensual) que ya se gastó ese mes.
+// pct === null significa "sin presupuesto asignado" (anillo vacío, gris).
+const BUDGET_RING_RADIUS = 19;
+const BUDGET_RING_CIRC = 2 * Math.PI * BUDGET_RING_RADIUS;
+
+function budgetRingColor(pct) {
+  if (pct === null) return null;
+  if (pct >= 100) return 'var(--danger)';
+  if (pct >= 80) return 'var(--series-4)';
+  return 'var(--accent)';
+}
+
+function buildBudgetRing(icon, pct) {
+  const wrap = document.createElement('div');
+  wrap.className = 'budget-ring';
+  const clamped = pct === null ? 0 : Math.min(100, Math.max(0, pct));
+  const offset = BUDGET_RING_CIRC * (1 - clamped / 100);
+  const color = budgetRingColor(pct);
+  wrap.innerHTML = `
+    <svg viewBox="0 0 44 44">
+      <circle class="budget-ring-track" cx="22" cy="22" r="${BUDGET_RING_RADIUS}"></circle>
+      ${pct !== null ? `<circle class="budget-ring-progress" cx="22" cy="22" r="${BUDGET_RING_RADIUS}" style="stroke:${color};stroke-dasharray:${BUDGET_RING_CIRC};stroke-dashoffset:${offset};"></circle>` : ''}
+    </svg>
+    <span class="budget-ring-icon">${icon}</span>
+  `;
+  return wrap;
+}
+
+function renderBudgetRow(cat, key) {
+  const budget = state.budgets[cat.id];
+  const amount = budget?.amount || 0;
+  const period = budget?.period || DEFAULT_BUDGET_PERIOD;
+  const monthly = monthlyEquivalent(amount, period);
+  const spent = budgetSpentForCategory(cat.id, key);
+  const pct = monthly > 0 ? Math.round((spent / monthly) * 100) : null;
+
+  const row = document.createElement('div');
+  row.className = 'budget-row';
+
+  const head = document.createElement('div');
+  head.className = 'budget-row-head';
+  head.appendChild(buildBudgetRing(cat.icon, pct));
+
+  const info = document.createElement('div');
+  info.className = 'budget-row-info';
+  const title = document.createElement('div');
+  title.className = 'budget-row-title';
+  title.textContent = cat.label;
+  info.appendChild(title);
+  const sub = document.createElement('div');
+  const color = budgetRingColor(pct);
+  sub.className = 'budget-row-sub';
+  if (color) sub.style.color = color;
+  sub.textContent = monthly > 0
+    ? `${formatMoney(spent)} de ${formatMoney(monthly)} · ${pct}%`
+    : 'Sin presupuesto asignado';
+  info.appendChild(sub);
+  head.appendChild(info);
+  row.appendChild(head);
+
+  const edit = document.createElement('div');
+  edit.className = 'budget-row-edit';
+  const amountInput = document.createElement('input');
+  amountInput.type = 'number';
+  amountInput.step = '0.01';
+  amountInput.min = '0';
+  amountInput.className = 'acct-balance-input';
+  amountInput.placeholder = '0';
+  amountInput.value = amount || '';
+  const periodSelect = document.createElement('select');
+  periodSelect.className = 'select-field budget-period-select';
+  Object.entries(BUDGET_PERIODS).forEach(([key2, def]) => {
+    const opt = document.createElement('option');
+    opt.value = key2;
+    opt.textContent = def.label;
+    if (key2 === period) opt.selected = true;
+    periodSelect.appendChild(opt);
+  });
+  const apply = () => {
+    const num = parseFloat(amountInput.value);
+    if (Number.isFinite(num) && num > 0) setBudget(cat.id, num, periodSelect.value);
+    else if (budget) clearBudget(cat.id);
+  };
+  amountInput.addEventListener('change', apply);
+  periodSelect.addEventListener('change', apply);
+  edit.append(amountInput, periodSelect);
+  row.appendChild(edit);
+
+  return row;
+}
+
+function renderPresupuesto() {
+  const list = $('#budgetList');
+  if (!list) return;
+  const key = currentMonthKey();
+  list.innerHTML = '';
+  let totalBudget = 0, totalSpent = 0, anyBudget = false;
+  categoriesFor('expense').forEach((cat) => {
+    const budget = state.budgets[cat.id];
+    if (budget && budget.amount > 0) {
+      anyBudget = true;
+      totalBudget += monthlyEquivalent(budget.amount, budget.period);
+      totalSpent += budgetSpentForCategory(cat.id, key);
+    }
+    list.appendChild(renderBudgetRow(cat, key));
+  });
+
+  $('#budgetSummaryCard').hidden = !anyBudget;
+  if (anyBudget) {
+    $('#budgetSummaryMonth').textContent = monthLabel(key);
+    $('#budgetSummaryAmount').textContent = formatMoney(totalBudget - totalSpent);
+    $('#budgetSummarySpent').textContent = `${formatMoney(totalSpent)} / ${formatMoney(totalBudget)}`;
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -1114,14 +1318,18 @@ function updateTxFieldVisibility() {
 function openTxModal(tx = null) {
   state.editingTxId = tx?.id || null;
   state.txType = tx?.type || 'expense';
+  // Si abres el + desde el detalle de una cuenta, preselecciona esa
+  // cuenta en vez de la predeterminada global — es la que más sentido
+  // tiene ahí.
+  const contextAccountId = (state.view === 'cuenta-detalle' && state.selectedAccountId) || currentDefaultAccountId();
 
   if (state.txType === 'transfer') {
-    state.txFromAccount = tx ? (tx.fromAccountId || '') : (currentDefaultAccountId() || '');
+    state.txFromAccount = tx ? (tx.fromAccountId || '') : (contextAccountId || '');
     state.txToAccount = tx ? (tx.toAccountId || '') : '';
   } else {
     state.txCategory = tx?.category || categoriesFor(state.txType)[0].id;
     state.txSubcategory = tx?.subcategory || '';
-    state.txAccount = tx ? (tx.accountId || '') : (currentDefaultAccountId() || '');
+    state.txAccount = tx ? (tx.accountId || '') : (contextAccountId || '');
   }
 
   $('#txModalTitle').textContent = tx ? 'Editar movimiento' : 'Nuevo movimiento';
@@ -1186,8 +1394,9 @@ async function handleTxSave() {
 // ---------------------------------------------------------------------
 function renderAll() {
   renderInicio();
-  if (state.view === 'movimientos') renderMovimientos();
+  if (state.view === 'cuenta-detalle') renderAccountDetail();
   if (state.view === 'cuentas') renderAccountsAdmin();
+  if (state.view === 'presupuesto') renderPresupuesto();
   if (state.view === 'analisis') renderAnalisis();
   if (state.view === 'ajustes') renderSettings();
 }
@@ -1261,8 +1470,9 @@ function wireEvents() {
     }
   }));
 
-  $('#filterMonth').addEventListener('change', (e) => { state.filterMonth = e.target.value; renderMovimientos(); });
-  $('#filterType').addEventListener('change', (e) => { state.filterType = e.target.value; renderMovimientos(); });
+  $('#acctDetailFilterMonth').addEventListener('change', (e) => { state.filterMonth = e.target.value; renderAccountDetail(); });
+  $('#acctDetailFilterType').addEventListener('change', (e) => { state.filterType = e.target.value; renderAccountDetail(); });
+  $('#acctDetailBack').addEventListener('click', () => setView('cuentas'));
   $('#analisisMonth').addEventListener('change', (e) => { state.analisisMonth = e.target.value; renderAnalisis(); });
 
   $('#themeToggle').addEventListener('click', () => {
