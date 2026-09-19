@@ -260,10 +260,17 @@ async function drainInbox(uid, token) {
   try {
     const inboxRef = fb.rt.ref(fb.rtdb, `txInbox/${token}`);
     const snap = await fb.rt.get(inboxRef);
-    if (!snap.exists()) return;
+    if (!snap.exists()) {
+      $('#saveLabel').textContent = 'Buzón del atajo: vacío';
+      $('#saveIndicator').classList.remove('error');
+      $('#saveIndicator').classList.add('show');
+      setTimeout(() => { $('#saveIndicator').classList.remove('show'); $('#saveLabel').textContent = 'Guardado'; }, 2500);
+      return;
+    }
     const entries = snap.val();
     const col = fb.fs.collection(fb.db, 'users', uid, 'transactions');
     const cleared = {};
+    let count = 0;
     for (const [key, entry] of Object.entries(entries)) {
       cleared[key] = null;
       const amount = Number(entry.amount);
@@ -276,10 +283,18 @@ async function drainInbox(uid, token) {
       const date = entry.ts ? new Date(entry.ts).toISOString().slice(0, 10) : todayISO();
       const note = typeof entry.note === 'string' ? entry.note.slice(0, 120) : '';
       await fb.fs.addDoc(col, { amount, type, category, note, date, source: 'shortcut', createdAt: fb.fs.serverTimestamp() });
+      count++;
     }
     await fb.rt.update(inboxRef, cleared);
+    $('#saveLabel').textContent = `Sincronizados ${count} del atajo`;
+    $('#saveIndicator').classList.remove('error');
+    $('#saveIndicator').classList.add('show');
+    setTimeout(() => { $('#saveIndicator').classList.remove('show'); $('#saveLabel').textContent = 'Guardado'; }, 2500);
   } catch (err) {
     console.error('drainInbox failed', err);
+    $('#saveLabel').textContent = 'Error al sincronizar el atajo: ' + (err?.code || err?.message || 'desconocido');
+    $('#saveIndicator').classList.add('error', 'show');
+    setTimeout(() => { $('#saveIndicator').classList.remove('show', 'error'); $('#saveLabel').textContent = 'Guardado'; }, 4000);
   }
 }
 
