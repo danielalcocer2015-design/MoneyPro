@@ -800,6 +800,11 @@ function renderInicio() {
   $('#incomeTotal').textContent = formatMoney(income);
   $('#expenseTotal').textContent = formatMoney(expense);
 
+  const { corrienteTotal, creditoTotal } = computeAccountTotals();
+  $('#patrimonioAmount').textContent = formatMoney(corrienteTotal - creditoTotal);
+  $('#patrimonioLiquidez').textContent = formatMoney(corrienteTotal);
+  $('#patrimonioPasivos').textContent = formatMoney(creditoTotal);
+
   const sorted = [...state.txs].sort((a, b) => (b.date + (b.createdAtMs || 0)).localeCompare(a.date + (a.createdAtMs || 0)));
   const recent = sorted.slice(0, 6);
   const list = $('#recentTxList');
@@ -1135,6 +1140,16 @@ function renderAccountRow(kind, acct) {
   return row;
 }
 
+// Liquidez (suma de cuentas corrientes) y pasivos (suma de deuda de
+// tarjetas de crédito) — la base de Patrimonio neto (Inicio), las barras
+// de Cuentas y el modal de Activos/Pasivos, todos parten de este mismo
+// cálculo para no desincronizarse entre sí.
+function computeAccountTotals() {
+  const corrienteTotal = currentAccountList('corriente').reduce((sum, a) => sum + accountBalance(a.id), 0);
+  const creditoTotal = currentAccountList('credito').reduce((sum, a) => sum - accountBalance(a.id), 0);
+  return { corrienteTotal, creditoTotal };
+}
+
 function renderAccountsAdmin() {
   const corrienteList = $('#corrienteAcctList');
   const creditoList = $('#creditoAcctList');
@@ -1144,8 +1159,7 @@ function renderAccountsAdmin() {
   currentAccountList('corriente').forEach((a) => corrienteList.appendChild(renderAccountRow('corriente', a)));
   currentAccountList('credito').forEach((a) => creditoList.appendChild(renderAccountRow('credito', a)));
 
-  const corrienteTotal = currentAccountList('corriente').reduce((sum, a) => sum + accountBalance(a.id), 0);
-  const creditoTotal = currentAccountList('credito').reduce((sum, a) => sum - accountBalance(a.id), 0);
+  const { corrienteTotal, creditoTotal } = computeAccountTotals();
   $('#corrienteTotal').textContent = formatMoney(corrienteTotal);
   $('#creditoTotal').textContent = formatMoney(creditoTotal);
   renderAccountSummary(corrienteTotal, creditoTotal);
@@ -1168,8 +1182,7 @@ function renderAccountSummary(corrienteTotal, creditoTotal) {
 }
 
 function openAssetsModal() {
-  const corrienteTotal = currentAccountList('corriente').reduce((sum, a) => sum + accountBalance(a.id), 0);
-  const creditoTotal = currentAccountList('credito').reduce((sum, a) => sum - accountBalance(a.id), 0);
+  const { corrienteTotal, creditoTotal } = computeAccountTotals();
   const data = [
     { id: 'activos', label: 'Activos', icon: '💰', value: Math.max(0, corrienteTotal), seriesIndex: 0 },
     { id: 'pasivos', label: 'Pasivos', icon: '💳', value: Math.max(0, creditoTotal), seriesIndex: 3 },
@@ -1690,6 +1703,7 @@ function wireEvents() {
   });
   $('#creditoAcctInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#creditoAcctAddBtn').click(); });
 
+  $('#patrimonioTrendBtn').addEventListener('click', () => setView('analisis'));
   $('#acctSummaryBtn').addEventListener('click', openAssetsModal);
   $('#assetsModalClose').addEventListener('click', closeAssetsModal);
   $('#assetsModalOverlay').addEventListener('click', (e) => { if (e.target.id === 'assetsModalOverlay') closeAssetsModal(); });

@@ -111,6 +111,7 @@ a { color: var(--accent); }
 .pill-arrow { font-size: 10px; }
 .pill-income .pill-arrow { color: var(--series-1); }
 .pill-expense .pill-arrow { color: var(--series-2); }
+.patrimonio-trend-btn { margin-top: 2px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; }
 
 .section-head { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
 .section-head h2 { font-size: 15px; margin: 0; color: var(--text-secondary); font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
