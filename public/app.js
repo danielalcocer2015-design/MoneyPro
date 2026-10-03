@@ -1720,14 +1720,36 @@ function handleBackGesture() {
 
 function wireSwipeBack() {
   const SWIPE_THRESHOLD = 60; // px mínimos para contar como swipe, no un toque
+  const LOCK_THRESHOLD = 10;  // px para decidir "esto es horizontal" cuanto antes
   let startX = null;
   let startY = null;
+  let horizontalLock = false;
 
   document.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) { startX = null; return; }
+    // No lo iniciamos sobre campos de texto/selects — ahí un arrastre
+    // horizontal es parte de editar el campo, no un gesto de retroceder.
+    if (e.touches.length !== 1 || e.target.closest('input, select, textarea')) {
+      startX = null;
+      return;
+    }
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
+    horizontalLock = false;
   }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (startX === null || e.touches.length !== 1) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (!horizontalLock && Math.abs(dx) > LOCK_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      horizontalLock = true;
+    }
+    // En cuanto el gesto se ve horizontal, lo "reclamamos" con
+    // preventDefault — si no, iOS/Android lo toman como intento de
+    // scroll vertical y mandan touchcancel en vez de touchend, y el
+    // swipe nunca llega a detectarse.
+    if (horizontalLock) e.preventDefault();
+  }, { passive: false });
 
   document.addEventListener('touchend', (e) => {
     if (startX === null) return;
@@ -1741,6 +1763,11 @@ function wireSwipeBack() {
     if (dx < -SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.5) {
       handleBackGesture();
     }
+  }, { passive: true });
+
+  document.addEventListener('touchcancel', () => {
+    startX = null;
+    startY = null;
   }, { passive: true });
 }
 
