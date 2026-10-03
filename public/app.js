@@ -1661,6 +1661,48 @@ function wireEvents() {
     $('#iosSteps').hidden = b.dataset.platform !== 'ios';
     $('#androidSteps').hidden = b.dataset.platform !== 'android';
   }));
+
+  wireSwipeBack();
+}
+
+// ---------------------------------------------------------------------
+// Gesto: swipe a la izquierda para retroceder
+// ---------------------------------------------------------------------
+// Cierra lo último que se abrió: primero un modal (movimiento o
+// activos/pasivos) o el selector de emoji si está abierto, y si no hay
+// nada de eso, sale del detalle de una cuenta de vuelta a Cuentas — es
+// la única navegación "anidada" que existe hoy fuera de las pestañas.
+function handleBackGesture() {
+  if ($('#txModalOverlay').classList.contains('open')) { closeTxModal(); return; }
+  if ($('#assetsModalOverlay').classList.contains('open')) { closeAssetsModal(); return; }
+  if ($('.emoji-picker')) { closeEmojiPicker(); return; }
+  if (state.view === 'cuenta-detalle') { setView('cuentas'); return; }
+}
+
+function wireSwipeBack() {
+  const SWIPE_THRESHOLD = 60; // px mínimos para contar como swipe, no un toque
+  let startX = null;
+  let startY = null;
+
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { startX = null; return; }
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (startX === null) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - startX;
+    const dy = touch.clientY - startY;
+    startX = null;
+    startY = null;
+    // Predominantemente horizontal (si no, es un scroll vertical normal)
+    // y hacia la izquierda.
+    if (dx < -SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      handleBackGesture();
+    }
+  }, { passive: true });
 }
 
 // ---------------------------------------------------------------------
