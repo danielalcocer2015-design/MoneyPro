@@ -265,6 +265,14 @@ function normalizeCategoryInput(str) {
   return (str || '').toString().trim().toLowerCase().normalize('NFD').replace(COMBINING_MARKS_RE, '');
 }
 
+// Mismo criterio tolerante, para hacer coincidir el nombre de cuenta que
+// manda el atajo (texto libre) con una cuenta real — ver drainInbox.
+function matchAccountByName(name) {
+  const normalized = typeof name === 'string' ? normalizeCategoryInput(name) : '';
+  if (!normalized) return null;
+  return accountsList().find((a) => a.id === normalized || normalizeCategoryInput(a.name) === normalized) || null;
+}
+
 function newToken() {
   const bytes = new Uint8Array(18);
   crypto.getRandomValues(bytes);
@@ -346,21 +354,28 @@ async function drainInbox(uid, token) {
       cleared[key] = null;
       const amount = Number(entry.amount);
       if (!Number.isFinite(amount) || amount <= 0) continue;
+      const date = entry.ts ? new Date(entry.ts).toISOString().slice(0, 10) : todayISO();
+      const note = typeof entry.note === 'string' ? entry.note.slice(0, 120) : '';
+
+      if (entry.type === 'transfer') {
+        // Igual que con la cuenta de un gasto/ingreso: si el nombre no
+        // coincide con ninguna cuenta, esa punta queda sin asignar
+        // (fromAccountId/toAccountId: '') para reasignar a mano después.
+        const fromAccountId = matchAccountByName(entry.fromAccount)?.id || '';
+        const toAccountId = matchAccountByName(entry.toAccount)?.id || '';
+        await fb.fs.addDoc(col, { amount, type: 'transfer', fromAccountId, toAccountId, note, date, source: 'shortcut', createdAt: fb.fs.serverTimestamp() });
+        count++;
+        continue;
+      }
+
       const type = entry.type === 'income' ? 'income' : 'expense';
       const list = categoriesFor(type);
       const normalizedInput = normalizeCategoryInput(entry.category);
       const matched = list.find((c) => c.id === normalizedInput || normalizeCategoryInput(c.label) === normalizedInput);
       const category = matched ? matched.id : FALLBACK_ID[type];
-      // La cuenta es opcional (atajos ya configurados antes de esta función
-      // no la mandan) — si no coincide con ninguna, el movimiento queda
-      // sin cuenta asignada (accountId: '') para reasignar a mano.
-      const normalizedAccount = typeof entry.account === 'string' ? normalizeCategoryInput(entry.account) : '';
-      const matchedAccount = normalizedAccount
-        ? accountsList().find((a) => a.id === normalizedAccount || normalizeCategoryInput(a.name) === normalizedAccount)
-        : null;
-      const accountId = matchedAccount ? matchedAccount.id : '';
-      const date = entry.ts ? new Date(entry.ts).toISOString().slice(0, 10) : todayISO();
-      const note = typeof entry.note === 'string' ? entry.note.slice(0, 120) : '';
+      // La cuenta es opcional — si no coincide con ninguna, el movimiento
+      // queda sin cuenta asignada (accountId: '') para reasignar a mano.
+      const accountId = matchAccountByName(entry.account)?.id || '';
       await fb.fs.addDoc(col, { amount, type, category, accountId, note, date, source: 'shortcut', createdAt: fb.fs.serverTimestamp() });
       count++;
     }
@@ -905,6 +920,18 @@ function shortcutBodyTemplate() {
     ts: { '.sv': 'timestamp' },
   }, null, 2);
 }
+function shortcutTransferBodyTemplate() {
+  // Para un atajo de transferencias aparte: "fromAccount"/"toAccount" son
+  // los nombres de tus cuentas (los mismos que ves en Cuentas), no un id.
+  return JSON.stringify({
+    amount: 0,
+    type: 'transfer',
+    fromAccount: 'efectivo',
+    toAccount: 'bbva',
+    note: '',
+    ts: { '.sv': 'timestamp' },
+  }, null, 2);
+}
 function renderSettings() {
   $('#accountEmail').textContent = state.demo ? 'Modo demostración' : (state.user?.email || '—');
   $('#logoutBtn').hidden = state.demo;
@@ -921,6 +948,7 @@ function renderSettings() {
   $('#copyAcctUrlBtn').disabled = !tokenAvailable;
   $('#copyUrlBtn').disabled = !tokenAvailable;
   $('#copyBodyBtn').disabled = !tokenAvailable;
+  $('#copyTransferBodyBtn').disabled = !tokenAvailable;
   $('#regenTokenBtn').disabled = state.demo;
   $('#demoTokenHint').hidden = !state.demo;
 
@@ -1618,6 +1646,17 @@ function wireEvents() {
       await navigator.clipboard.writeText(body);
       showSaved(true);
       $('#saveLabel').textContent = 'JSON copiado';
+      setTimeout(() => { $('#saveLabel').textContent = 'Guardado'; }, 1800);
+    } catch {
+      prompt('Copia este JSON:', body);
+    }
+  });
+  $('#copyTransferBodyBtn').addEventListener('click', async () => {
+    const body = shortcutTransferBodyTemplate();
+    try {
+      await navigator.clipboard.writeText(body);
+      showSaved(true);
+      $('#saveLabel').textContent = 'JSON de transferencia copiado';
       setTimeout(() => { $('#saveLabel').textContent = 'Guardado'; }, 1800);
     } catch {
       prompt('Copia este JSON:', body);

@@ -203,6 +203,7 @@
           <button class="chip-btn" id="copyAcctUrlBtn">2. Copiar URL de cuentas</button>
           <button class="chip-btn" id="copyUrlBtn">3. Copiar URL para guardar</button>
           <button class="chip-btn" id="copyBodyBtn">4. Copiar cuerpo JSON</button>
+          <button class="chip-btn" id="copyTransferBodyBtn">5. Copiar JSON de transferencia</button>
         </div>
         <p class="settings-hint small" id="demoTokenHint" hidden>El atajo solo funciona con una cuenta real (no en modo demostración).</p>
 
@@ -234,6 +235,23 @@
           <li>Crea el atajo: método <strong>POST</strong>, pega tu URL (botón «3. Copiar URL para guardar»), «Cuerpo de la solicitud» → <strong>JSON personalizado</strong>, pega la plantilla (botón «4. Copiar cuerpo JSON»). Reemplaza el <code>0</code> de <code>"amount"</code> por una variable <strong>Número</strong>, el texto <code>comida</code> de <code>"category"</code> por tu variable Selección de categoría, y si creaste la variable de cuenta, el texto vacío de <code>"account"</code> por ella (si no, borra ese campo del JSON).</li>
           <li>Coloca el atajo como widget en tu pantalla de inicio. Un toque y el gasto queda registrado.</li>
         </ol>
+      </div>
+
+      <div class="settings-block shortcut-block">
+        <h3>🔁 Atajo aparte para transferencias (opcional)</h3>
+        <p class="settings-hint">Un segundo atajo, independiente del de gastos/ingresos — no toques el que ya te funciona. Mueve dinero entre dos de tus propias cuentas (ej. de Efectivo a una tarjeta). Usa el mismo token y los mismos botones de arriba.</p>
+        <ol class="steps-list" id="transferSteps">
+          <li><strong>Crea un atajo nuevo</strong> (+ en la app Atajos) — no edites el de gastos/ingresos.</li>
+          <li>Agrega <strong>«Texto»</strong>: pega tu token (botón «📋 Copiar token»).</li>
+          <li>Pregunta la cuenta de <strong>origen</strong>: <strong>«Lista»</strong> con dos elementos (<code>Corriente</code>, <code>Tarjeta</code>) → <strong>«Seleccionar de la lista»</strong> (mensaje «¿De qué tipo de cuenta sale?») → dos <strong>«Reemplazar texto»</strong> encadenadas: <code>Corriente</code>→<code>corriente</code>, luego <code>Tarjeta</code>→<code>credito</code>. Esa es tu variable "Grupo origen".</li>
+          <li>Agrega <strong>«Texto»</strong>: URL de cuentas = base fija (botón «2. Copiar URL de cuentas», cortando token y grupo del final) + token + <code>/</code> + "Grupo origen" + <code>.json</code>. Luego <strong>«Obtener contenido de URL»</strong> (GET), y <strong>«Elegir de la lista»</strong> con esa variable «Contenido de URL». Renómbrala a <code>Cuenta origen</code> (toca el resultado → «Cambiar nombre») — vas a repetir este mismo patrón para el destino y es fácil confundirlas si no las renombras.</li>
+          <li>Repite los dos pasos anteriores para la cuenta de <strong>destino</strong>: pregunta «¿A qué tipo de cuenta entra?», arma su propia URL, «Obtener contenido de URL», «Elegir de la lista», y renombra el resultado a <code>Cuenta destino</code>.</li>
+          <li>Agrega <strong>«Preguntar por texto»</strong> (para el monto).</li>
+          <li>Agrega <strong>«Texto»</strong>: la base de la URL de guardar + token + <code>.json</code> (compárala con el botón «3. Copiar URL para guardar»).</li>
+          <li>Agrega <strong>«Obtener contenido de URL»</strong> con esa URL, Método <strong>POST</strong>, «Cuerpo de la solicitud» → <strong>JSON</strong> (compara contra el botón «5. Copiar JSON de transferencia» para los nombres exactos de los campos). Agrega: <code>amount</code> (tipo Número, variable del monto), <code>type</code> con el texto fijo <code>transfer</code>, <code>fromAccount</code> (variable <code>Cuenta origen</code>), <code>toAccount</code> (variable <code>Cuenta destino</code>). Sin <code>category</code> ni <code>token</code>.</li>
+          <li>Renombra el atajo (ej. «MoneyPro – Transferencia») y agrégalo a tu pantalla de inicio.</li>
+        </ol>
+        <p class="settings-hint small">Si el nombre de la cuenta de origen o destino no coincide exactamente con una de tus cuentas, esa transferencia llega sin esa cuenta asignada y la completas a mano desde Movimientos — igual que con un gasto sin categoría reconocida.</p>
       </div>
 
       <div class="settings-block">
