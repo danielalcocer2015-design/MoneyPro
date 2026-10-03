@@ -1,6 +1,6 @@
 import { firebaseConfig, firebaseEnabled } from './firebase-config.js';
 import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES, FALLBACK_ID, defaultCategoryDoc, slugify, findCategory } from './categories.js';
-import { defaultAccountDoc, slugifyAccount, allAccounts, findAccount, defaultAccountId } from './accounts.js';
+import { defaultAccountDoc, slugifyAccount, allAccounts, transactableAccounts, findAccount, defaultAccountId } from './accounts.js';
 import { BUDGET_PERIODS, DEFAULT_BUDGET_PERIOD, monthlyEquivalent, defaultBudgetDoc } from './budgets.js';
 import { renderDonutChart, renderBarChart } from './charts.js';
 
@@ -51,8 +51,12 @@ function categoryInfo(type, id) {
 
 // Cuentas: leen de state.accounts (personalizables), con las de
 // accounts.js solo como semilla inicial (ver defaultAccountDoc).
+// accountsList() es solo lo "transaccionable" (corriente+credito) — lo
+// que se puede elegir en un movimiento o ser la cuenta predeterminada.
+// Para incluir también "Otros activos" (coche, casa, inversiones...) usa
+// accountInfo()/allAccounts(state.accounts) directamente.
 function accountsList() {
-  return allAccounts(state.accounts);
+  return transactableAccounts(state.accounts);
 }
 function accountInfo(id) {
   return findAccount(state.accounts, id) || { id, name: id ? 'Cuenta eliminada' : 'Sin cuenta', icon: '❔', kind: 'corriente' };
@@ -215,7 +219,10 @@ async function startReal(user) {
   unsubAccounts?.();
   unsubAccounts = fb.fs.onSnapshot(acctRef, (snap) => {
     const data = snap.data();
-    state.accounts = (data && data.corriente && data.credito) ? data : defaultAccountDoc();
+    // { activo: [] } primero y luego ...data: si el documento es de antes
+    // de que existiera "Otros activos", data no trae esa clave y se usa
+    // el [] por defecto; si ya la trae, gana la de data.
+    state.accounts = (data && data.corriente && data.credito) ? { activo: [], ...data } : defaultAccountDoc();
     syncAccountListToRtdb();
     renderAll();
   });
@@ -442,7 +449,7 @@ function demoAccounts() {
   }
   try {
     const parsed = JSON.parse(raw);
-    return (parsed && parsed.corriente && parsed.credito) ? parsed : defaultAccountDoc();
+    return (parsed && parsed.corriente && parsed.credito) ? { activo: [], ...parsed } : defaultAccountDoc();
   } catch {
     return defaultAccountDoc();
   }
@@ -596,7 +603,7 @@ async function deleteSubcategory(type, categoryId, subId) {
 // CRUD de cuentas (rama demo o real)
 // ---------------------------------------------------------------------
 function currentAccountList(kind) {
-  return state.accounts[kind === 'credito' ? 'credito' : 'corriente'];
+  return state.accounts[kind] || [];
 }
 
 async function persistAccounts(newAccounts) {
@@ -617,20 +624,34 @@ async function addAccount(kind, name) {
   const list = currentAccountList(kind);
   const id = slugifyAccount(trimmed);
   if (list.some((a) => a.id === id)) { alert('Ya existe una cuenta con ese nombre.'); return; }
+  const isAsset = kind === 'activo';
+  // hasAnyAccount solo mira lo transaccionable — un activo nunca debe
+  // quedar marcado como predeterminado (no es seleccionable en un
+  // movimiento), así que tampoco cuenta para decidir si ESTA es la
+  // primera cuenta transaccionable.
   const hasAnyAccount = accountsList().length > 0;
   const updated = {
     ...state.accounts,
-    [kind]: [...list, { id, name: trimmed, icon: kind === 'credito' ? '💳' : '💵', kind, initialBalance: 0, isDefault: !hasAnyAccount }],
+    [kind]: [...list, {
+      id, name: trimmed, kind, initialBalance: 0,
+      icon: kind === 'credito' ? '💳' : isAsset ? '📦' : '💵',
+      isDefault: !isAsset && !hasAnyAccount,
+    }],
   };
   await persistAccounts(updated);
 }
 
 async function deleteAccount(kind, id) {
-  if (!confirm('¿Eliminar esta cuenta? Tus movimientos existentes con esta cuenta no se borran, solo quedan sin cuenta asignada.')) return;
+  const isAsset = kind === 'activo';
+  const msg = isAsset
+    ? '¿Eliminar este activo?'
+    : '¿Eliminar esta cuenta? Tus movimientos existentes con esta cuenta no se borran, solo quedan sin cuenta asignada.';
+  if (!confirm(msg)) return;
   const wasDefault = findAccount(state.accounts, id)?.isDefault;
   const updated = { ...state.accounts, [kind]: currentAccountList(kind).filter((a) => a.id !== id) };
   if (wasDefault) {
-    const remaining = allAccounts(updated);
+    // Solo lo transaccionable puede heredar el ⭐ — un activo nunca.
+    const remaining = transactableAccounts(updated);
     if (remaining[0]) {
       updated.corriente = updated.corriente.map((a) => ({ ...a, isDefault: a.id === remaining[0].id }));
       updated.credito = updated.credito.map((a) => ({ ...a, isDefault: a.id === remaining[0].id }));
@@ -655,6 +676,7 @@ async function setAccountInitialBalance(kind, id, value) {
 
 async function setDefaultAccount(id) {
   const updated = {
+    ...state.accounts,
     corriente: state.accounts.corriente.map((a) => ({ ...a, isDefault: a.id === id })),
     credito: state.accounts.credito.map((a) => ({ ...a, isDefault: a.id === id })),
   };
@@ -800,9 +822,10 @@ function renderInicio() {
   $('#incomeTotal').textContent = formatMoney(income);
   $('#expenseTotal').textContent = formatMoney(expense);
 
-  const { corrienteTotal, creditoTotal } = computeAccountTotals();
-  $('#patrimonioAmount').textContent = formatMoney(corrienteTotal - creditoTotal);
+  const { corrienteTotal, creditoTotal, activoTotal } = computeAccountTotals();
+  $('#patrimonioAmount').textContent = formatMoney(corrienteTotal + activoTotal - creditoTotal);
   $('#patrimonioLiquidez').textContent = formatMoney(corrienteTotal);
+  $('#patrimonioActivos').textContent = formatMoney(activoTotal);
   $('#patrimonioPasivos').textContent = formatMoney(creditoTotal);
 
   const sorted = [...state.txs].sort((a, b) => (b.date + (b.createdAtMs || 0)).localeCompare(a.date + (a.createdAtMs || 0)));
@@ -1054,7 +1077,7 @@ function renderCategoriesAdmin() {
   categoriesFor('income').forEach((c) => incomeList.appendChild(renderCategoryRow('income', c)));
 }
 
-const ACCOUNT_EMOJI_PRESET = ['💵', '💳', '🏦', '💰', '👛', '🐷', '💷', '💶', '💴', '📱', '🪙', '💎', '🏧', '📈'];
+const ACCOUNT_EMOJI_PRESET = ['💵', '💳', '🏦', '💰', '👛', '🐷', '💷', '💶', '💴', '📱', '🪙', '💎', '🏧', '📈', '🚗', '🏠', '🏞️', '📦'];
 
 function renderAccountRow(kind, acct) {
   const row = document.createElement('div');
@@ -1073,7 +1096,7 @@ function renderAccountRow(kind, acct) {
   const iconBtn = document.createElement('button');
   iconBtn.type = 'button';
   iconBtn.className = 'cat-emoji-btn';
-  iconBtn.textContent = acct.icon || (kind === 'credito' ? '💳' : '💵');
+  iconBtn.textContent = acct.icon || (kind === 'credito' ? '💳' : kind === 'activo' ? '📦' : '💵');
   iconBtn.title = 'Cambiar ícono';
   iconBtn.addEventListener('click', () => {
     const existing = row.querySelector('.emoji-picker');
@@ -1106,28 +1129,33 @@ function renderAccountRow(kind, acct) {
   balanceEl.className = 'acct-row-balance' + (balance < 0 ? ' negative' : '');
   balanceEl.textContent = formatMoney(kind === 'credito' ? -balance : balance);
 
-  const defaultBtn = document.createElement('button');
-  defaultBtn.type = 'button';
-  defaultBtn.className = 'acct-default-btn' + (acct.isDefault ? ' active' : '');
-  defaultBtn.textContent = '⭐';
-  defaultBtn.title = acct.isDefault ? 'Cuenta predeterminada' : 'Marcar como predeterminada';
-  defaultBtn.addEventListener('click', () => setDefaultAccount(acct.id));
-
   const delBtn = document.createElement('button');
   delBtn.type = 'button';
   delBtn.className = 'cat-del-btn';
   delBtn.textContent = '✕';
-  delBtn.title = 'Eliminar cuenta';
+  delBtn.title = kind === 'activo' ? 'Eliminar activo' : 'Eliminar cuenta';
   delBtn.addEventListener('click', () => deleteAccount(kind, acct.id));
 
-  head.append(iconBtn, labelInput, balanceEl, defaultBtn, delBtn);
+  head.append(iconBtn, labelInput, balanceEl);
+  if (kind !== 'activo') {
+    // Un activo no es seleccionable en un movimiento, así que marcarlo
+    // "predeterminado" no tendría ningún efecto — no mostramos la ⭐.
+    const defaultBtn = document.createElement('button');
+    defaultBtn.type = 'button';
+    defaultBtn.className = 'acct-default-btn' + (acct.isDefault ? ' active' : '');
+    defaultBtn.textContent = '⭐';
+    defaultBtn.title = acct.isDefault ? 'Cuenta predeterminada' : 'Marcar como predeterminada';
+    defaultBtn.addEventListener('click', () => setDefaultAccount(acct.id));
+    head.appendChild(defaultBtn);
+  }
+  head.appendChild(delBtn);
   row.appendChild(head);
 
   const sub = document.createElement('div');
   sub.className = 'acct-row-sub';
   const balLabel = document.createElement('span');
   balLabel.className = 'acct-balance-label';
-  balLabel.textContent = kind === 'credito' ? 'Deuda inicial' : 'Saldo inicial';
+  balLabel.textContent = kind === 'credito' ? 'Deuda inicial' : kind === 'activo' ? 'Valor' : 'Saldo inicial';
   const balInput = document.createElement('input');
   balInput.type = 'number';
   balInput.step = '0.01';
@@ -1147,50 +1175,59 @@ function renderAccountRow(kind, acct) {
 function computeAccountTotals() {
   const corrienteTotal = currentAccountList('corriente').reduce((sum, a) => sum + accountBalance(a.id), 0);
   const creditoTotal = currentAccountList('credito').reduce((sum, a) => sum - accountBalance(a.id), 0);
-  return { corrienteTotal, creditoTotal };
+  const activoTotal = currentAccountList('activo').reduce((sum, a) => sum + accountBalance(a.id), 0);
+  return { corrienteTotal, creditoTotal, activoTotal };
 }
 
 function renderAccountsAdmin() {
   const corrienteList = $('#corrienteAcctList');
   const creditoList = $('#creditoAcctList');
-  if (!corrienteList || !creditoList) return;
+  const activoList = $('#activoAcctList');
+  if (!corrienteList || !creditoList || !activoList) return;
   corrienteList.innerHTML = '';
   creditoList.innerHTML = '';
+  activoList.innerHTML = '';
   currentAccountList('corriente').forEach((a) => corrienteList.appendChild(renderAccountRow('corriente', a)));
   currentAccountList('credito').forEach((a) => creditoList.appendChild(renderAccountRow('credito', a)));
+  currentAccountList('activo').forEach((a) => activoList.appendChild(renderAccountRow('activo', a)));
 
-  const { corrienteTotal, creditoTotal } = computeAccountTotals();
+  const { corrienteTotal, creditoTotal, activoTotal } = computeAccountTotals();
   $('#corrienteTotal').textContent = formatMoney(corrienteTotal);
   $('#creditoTotal').textContent = formatMoney(creditoTotal);
-  renderAccountSummary(corrienteTotal, creditoTotal);
+  $('#activoTotal').textContent = formatMoney(activoTotal);
+  renderAccountSummary(corrienteTotal, creditoTotal, activoTotal);
 }
 
-// Barras arriba de Cuentas: total en cuentas corrientes vs. total en
-// tarjetas de crédito, cada una proporcional a la más grande de las dos
-// (mismo criterio que la gráfica de barras de Análisis). Tocarlas abre
-// el desglose de activos vs. pasivos — ver openAssetsModal.
-function renderAccountSummary(corrienteTotal, creditoTotal) {
+// Barras arriba de Cuentas: liquidez, otros activos y pasivos, cada una
+// proporcional a la más grande de las tres (mismo criterio que la
+// gráfica de barras de Análisis). Tocarlas abre el desglose de
+// Activos/Pasivos — ver openAssetsModal.
+function renderAccountSummary(corrienteTotal, creditoTotal, activoTotal) {
   const corrienteEl = $('#acctSummaryCorrienteValue');
   if (!corrienteEl) return;
   corrienteEl.textContent = formatMoney(corrienteTotal);
   $('#acctSummaryCreditoValue').textContent = formatMoney(creditoTotal);
+  $('#acctSummaryActivoValue').textContent = formatMoney(activoTotal);
   const corrienteAbs = Math.max(0, corrienteTotal);
   const creditoAbs = Math.max(0, creditoTotal);
-  const max = Math.max(1, corrienteAbs, creditoAbs);
+  const activoAbs = Math.max(0, activoTotal);
+  const max = Math.max(1, corrienteAbs, creditoAbs, activoAbs);
   $('#acctSummaryCorrienteFill').style.width = `${Math.max((corrienteAbs / max) * 100, corrienteAbs > 0 ? 3 : 0)}%`;
   $('#acctSummaryCreditoFill').style.width = `${Math.max((creditoAbs / max) * 100, creditoAbs > 0 ? 3 : 0)}%`;
+  $('#acctSummaryActivoFill').style.width = `${Math.max((activoAbs / max) * 100, activoAbs > 0 ? 3 : 0)}%`;
 }
 
 function openAssetsModal() {
-  const { corrienteTotal, creditoTotal } = computeAccountTotals();
+  const { corrienteTotal, creditoTotal, activoTotal } = computeAccountTotals();
   const data = [
-    { id: 'activos', label: 'Activos', icon: '💰', value: Math.max(0, corrienteTotal), seriesIndex: 0 },
+    { id: 'liquidez', label: 'Liquidez', icon: '💧', value: Math.max(0, corrienteTotal), seriesIndex: 0 },
+    { id: 'activos', label: 'Otros activos', icon: '📦', value: Math.max(0, activoTotal), seriesIndex: 2 },
     { id: 'pasivos', label: 'Pasivos', icon: '💳', value: Math.max(0, creditoTotal), seriesIndex: 3 },
   ];
   renderDonutChart($('#assetsChartWrap'), data, formatMoney, {
-    centerLabel: 'Activo neto',
-    centerValue: corrienteTotal - creditoTotal,
-    emptyMessage: 'Agrega cuentas para ver tus activos y pasivos.',
+    centerLabel: 'Patrimonio neto',
+    centerValue: corrienteTotal + activoTotal - creditoTotal,
+    emptyMessage: 'Agrega cuentas o activos para ver tu patrimonio.',
   });
   $('#assetsModalOverlay').classList.add('open');
 }
@@ -1702,6 +1739,12 @@ function wireEvents() {
     $('#creditoAcctInput').value = '';
   });
   $('#creditoAcctInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#creditoAcctAddBtn').click(); });
+
+  $('#activoAcctAddBtn').addEventListener('click', () => {
+    addAccount('activo', $('#activoAcctInput').value);
+    $('#activoAcctInput').value = '';
+  });
+  $('#activoAcctInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#activoAcctAddBtn').click(); });
 
   $('#patrimonioTrendBtn').addEventListener('click', () => setView('analisis'));
   $('#acctSummaryBtn').addEventListener('click', openAssetsModal);

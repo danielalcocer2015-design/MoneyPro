@@ -40,6 +40,7 @@
         <div class="balance-amount" id="patrimonioAmount">$0.00</div>
         <div class="balance-sub">
           <span class="pill pill-income">💧 Liquidez <strong id="patrimonioLiquidez">$0.00</strong></span>
+          <span class="pill">📦 Otros activos <strong id="patrimonioActivos">$0.00</strong></span>
           <span class="pill pill-expense">💳 Pasivos <strong id="patrimonioPasivos">$0.00</strong></span>
         </div>
         <button type="button" class="link-btn patrimonio-trend-btn" id="patrimonioTrendBtn">📈 Ver ingresos mensuales</button>
@@ -89,6 +90,12 @@
         </div>
         <div class="bar-track"><div class="bar-fill" id="acctSummaryCorrienteFill" style="background:var(--series-1)"></div></div>
         <div class="acct-summary-row">
+          <span class="acct-summary-dot" style="background:var(--series-3)"></span>
+          <span class="acct-summary-label">Otros activos</span>
+          <span class="acct-summary-value" id="acctSummaryActivoValue">$0.00</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" id="acctSummaryActivoFill" style="background:var(--series-3)"></div></div>
+        <div class="acct-summary-row">
           <span class="acct-summary-dot" style="background:var(--series-4)"></span>
           <span class="acct-summary-label">Tarjetas de crédito</span>
           <span class="acct-summary-value" id="acctSummaryCreditoValue">$0.00</span>
@@ -121,6 +128,19 @@
           <button class="chip-btn" id="creditoAcctAddBtn">+ Agregar</button>
         </div>
       </div>
+      <div class="settings-block accounts-block">
+        <div class="section-head">
+          <h2>Otros activos</h2>
+          <span class="acct-group-total" id="activoTotal">$0.00</span>
+        </div>
+        <p class="settings-hint">Coche, casa, terrenos, inversiones — cosas con valor que no tienen movimientos, solo un valor que ajustas cuando quieras. No aparecen en el modal de movimiento ni como cuenta predeterminada.</p>
+        <div class="cat-list" id="activoAcctList"></div>
+        <div class="cat-add-row">
+          <input type="text" class="cat-add-input" id="activoAcctInput" placeholder="Ej. Mi coche, Acciones…" maxlength="30">
+          <button class="chip-btn" id="activoAcctAddBtn">+ Agregar</button>
+        </div>
+      </div>
+
       <p class="settings-hint small">Toca ⭐ para marcar la cuenta que se preselecciona al agregar un movimiento nuevo. El campo «Saldo inicial» ajusta el punto de partida del saldo calculado.</p>
     </section>
 
