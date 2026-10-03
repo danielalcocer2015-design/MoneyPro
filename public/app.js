@@ -726,10 +726,11 @@ function setView(view) {
   // abajo — mientras se ve, dejamos "Cuentas" marcada como activa.
   const navMatch = view === 'cuenta-detalle' ? 'cuentas' : view;
   $$('.nav-tabs button').forEach((btn) => btn.classList.toggle('active', btn.dataset.view === navMatch));
-  // El + agrega un movimiento — no aplica en Cuentas, Presupuesto ni
-  // Ajustes (esas pantallas ya tienen sus propios controles), y ahí solo
-  // estorbaba tapando el contenido de más abajo.
-  $('#addFab').hidden = view === 'cuentas' || view === 'ajustes' || view === 'presupuesto';
+  // El + también sirve para crear un activo/pasivo (además de un
+  // movimiento), así que ahora sí tiene sentido en Cuentas. En
+  // Presupuesto y Ajustes sigue sin aplicar — esas pantallas ya tienen
+  // sus propios controles, y ahí solo estorbaba tapando el contenido.
+  $('#addFab').hidden = view === 'ajustes' || view === 'presupuesto';
   if (view === 'cuenta-detalle') renderAccountDetail();
   if (view === 'cuentas') renderAccountsAdmin();
   if (view === 'presupuesto') renderPresupuesto();
@@ -1446,13 +1447,25 @@ function buildTransferGrids() {
   buildTransferSideGrid('#txToAccountGrid', state.txToAccount, (id) => { state.txToAccount = id; });
 }
 
+// "activo" (otros activos) y "pasivo" (tarjetas/deudas) no son movimientos
+// — son una forma rápida de crear la cuenta directo desde el +, con un
+// nombre y un valor/deuda inicial, igual que el "+ Agregar" de Cuentas.
+function isAccountCreationType(type) {
+  return type === 'activo' || type === 'pasivo';
+}
+
 function updateTxFieldVisibility() {
   const isTransfer = state.txType === 'transfer';
-  $('#txCategoryField').hidden = isTransfer;
-  $('#txAccountField').hidden = isTransfer;
+  const isAccountType = isAccountCreationType(state.txType);
+  $('#txCategoryField').hidden = isTransfer || isAccountType;
+  $('#txAccountField').hidden = isTransfer || isAccountType;
   $('#txFromAccountField').hidden = !isTransfer;
   $('#txToAccountField').hidden = !isTransfer;
-  if (isTransfer) $('#txSubcategoryField').hidden = true;
+  $('#txAssetNameField').hidden = !isAccountType;
+  $('#txDateRow').hidden = isAccountType;
+  $('#txNoteField').hidden = isAccountType;
+  $('#txAmountLabel').textContent = state.txType === 'activo' ? 'Valor' : state.txType === 'pasivo' ? 'Deuda' : 'Monto';
+  if (isTransfer || isAccountType) $('#txSubcategoryField').hidden = true;
 }
 
 function openTxModal(tx = null) {
@@ -1466,14 +1479,16 @@ function openTxModal(tx = null) {
   if (state.txType === 'transfer') {
     state.txFromAccount = tx ? (tx.fromAccountId || '') : (contextAccountId || '');
     state.txToAccount = tx ? (tx.toAccountId || '') : '';
-  } else {
+  } else if (!isAccountCreationType(state.txType)) {
     state.txCategory = tx?.category || categoriesFor(state.txType)[0].id;
     state.txSubcategory = tx?.subcategory || '';
     state.txAccount = tx ? (tx.accountId || '') : (contextAccountId || '');
   }
 
-  $('#txModalTitle').textContent = tx ? 'Editar movimiento' : 'Nuevo movimiento';
+  const titles = { activo: 'Nuevo activo', pasivo: 'Nuevo pasivo' };
+  $('#txModalTitle').textContent = tx ? 'Editar movimiento' : (titles[state.txType] || 'Nuevo movimiento');
   $('#txAmount').value = tx ? tx.amount : '';
+  $('#txAssetName').value = '';
   $('#txDate').value = tx ? tx.date : todayISO();
   $('#txNote').value = tx?.note || '';
   $('#txError').hidden = true;
@@ -1482,7 +1497,7 @@ function openTxModal(tx = null) {
   updateTxFieldVisibility();
   if (state.txType === 'transfer') {
     buildTransferGrids();
-  } else {
+  } else if (!isAccountCreationType(state.txType)) {
     buildCategoryGrid();
     buildSubcategoryGrid();
     buildAccountGrid();
@@ -1496,10 +1511,36 @@ function closeTxModal() {
 async function handleTxSave() {
   const amount = parseFloat($('#txAmount').value);
   if (!Number.isFinite(amount) || amount <= 0) {
-    $('#txError').textContent = 'Ingresa un monto válido.';
+    $('#txError').textContent = state.txType === 'pasivo' ? 'Ingresa una deuda válida.' : state.txType === 'activo' ? 'Ingresa un valor válido.' : 'Ingresa un monto válido.';
     $('#txError').hidden = false;
     return;
   }
+
+  if (isAccountCreationType(state.txType)) {
+    const kind = state.txType === 'activo' ? 'activo' : 'credito';
+    const name = $('#txAssetName').value.trim();
+    if (!name) {
+      $('#txError').textContent = 'Ingresa un nombre.';
+      $('#txError').hidden = false;
+      return;
+    }
+    const id = slugifyAccount(name);
+    if (currentAccountList(kind).some((a) => a.id === id)) {
+      $('#txError').textContent = 'Ya existe una cuenta con ese nombre.';
+      $('#txError').hidden = false;
+      return;
+    }
+    try {
+      await addAccount(kind, name);
+      await setAccountInitialBalance(kind, id, amount);
+      closeTxModal();
+    } catch {
+      $('#txError').textContent = 'No se pudo guardar. Intenta de nuevo.';
+      $('#txError').hidden = false;
+    }
+    return;
+  }
+
   const date = $('#txDate').value || todayISO();
   const note = $('#txNote').value.trim().slice(0, 120);
 
@@ -1597,10 +1638,12 @@ function wireEvents() {
     $$('#txTypeToggle button').forEach((x) => x.classList.remove('active'));
     b.classList.add('active');
     updateTxFieldVisibility();
+    const titles = { activo: 'Nuevo activo', pasivo: 'Nuevo pasivo' };
+    $('#txModalTitle').textContent = state.editingTxId ? 'Editar movimiento' : (titles[state.txType] || 'Nuevo movimiento');
     if (state.txType === 'transfer') {
       if (!state.txFromAccount) state.txFromAccount = currentDefaultAccountId() || '';
       buildTransferGrids();
-    } else {
+    } else if (!isAccountCreationType(state.txType)) {
       state.txCategory = categoriesFor(state.txType)[0].id;
       state.txSubcategory = '';
       if (!state.txAccount) state.txAccount = currentDefaultAccountId() || '';

@@ -97,11 +97,13 @@
         <div class="bar-track"><div class="bar-fill" id="acctSummaryActivoFill" style="background:var(--series-3)"></div></div>
         <div class="acct-summary-row">
           <span class="acct-summary-dot" style="background:var(--series-4)"></span>
-          <span class="acct-summary-label">Tarjetas de crédito</span>
+          <span class="acct-summary-label">Pasivos</span>
           <span class="acct-summary-value" id="acctSummaryCreditoValue">$0.00</span>
         </div>
         <div class="bar-track"><div class="bar-fill" id="acctSummaryCreditoFill" style="background:var(--series-4)"></div></div>
       </button>
+
+      <p class="settings-hint small">Toca ⭐ para marcar la cuenta que se preselecciona al agregar un movimiento nuevo. El campo «Saldo inicial»/«Valor» ajusta el punto de partida del saldo calculado. También puedes agregar cuentas, pasivos y activos desde el botón + .</p>
 
       <div class="settings-block accounts-block">
         <div class="section-head">
@@ -118,13 +120,13 @@
 
       <div class="settings-block accounts-block">
         <div class="section-head">
-          <h2>Tarjetas de crédito</h2>
+          <h2>Pasivos</h2>
           <span class="acct-group-total debt" id="creditoTotal">$0.00</span>
         </div>
-        <p class="settings-hint">Dinero que debes — el saldo se muestra como deuda.</p>
+        <p class="settings-hint">Tarjetas de crédito, préstamos, deudas — dinero que debes. El saldo se muestra como deuda.</p>
         <div class="cat-list" id="creditoAcctList"></div>
         <div class="cat-add-row">
-          <input type="text" class="cat-add-input" id="creditoAcctInput" placeholder="Nueva tarjeta…" maxlength="30">
+          <input type="text" class="cat-add-input" id="creditoAcctInput" placeholder="Ej. Tarjeta Nu, Préstamo…" maxlength="30">
           <button class="chip-btn" id="creditoAcctAddBtn">+ Agregar</button>
         </div>
       </div>
@@ -140,8 +142,6 @@
           <button class="chip-btn" id="activoAcctAddBtn">+ Agregar</button>
         </div>
       </div>
-
-      <p class="settings-hint small">Toca ⭐ para marcar la cuenta que se preselecciona al agregar un movimiento nuevo. El campo «Saldo inicial» ajusta el punto de partida del saldo calculado.</p>
     </section>
 
     <section class="view" data-view="presupuesto" id="viewPresupuesto" hidden>
@@ -337,9 +337,15 @@
       <button type="button" class="active" data-type="expense">Gasto</button>
       <button type="button" data-type="income">Ingreso</button>
       <button type="button" data-type="transfer">Transferencia</button>
+      <button type="button" data-type="activo">Activo</button>
+      <button type="button" data-type="pasivo">Pasivo</button>
+    </div>
+    <div class="field" id="txAssetNameField" hidden>
+      <label for="txAssetName">Nombre</label>
+      <input type="text" id="txAssetName" maxlength="30" placeholder="Ej. Mi coche, Acciones…">
     </div>
     <div class="field">
-      <label for="txAmount">Monto</label>
+      <label for="txAmount" id="txAmountLabel">Monto</label>
       <input type="number" id="txAmount" inputmode="decimal" step="0.01" min="0.01" placeholder="0.00">
     </div>
     <div class="field" id="txCategoryField">
@@ -362,13 +368,13 @@
       <label>A</label>
       <div class="category-grid" id="txToAccountGrid"></div>
     </div>
-    <div class="field-row">
+    <div class="field-row" id="txDateRow">
       <div class="field">
         <label for="txDate">Fecha</label>
         <input type="date" id="txDate">
       </div>
     </div>
-    <div class="field">
+    <div class="field" id="txNoteField">
       <label for="txNote">Nota (opcional)</label>
       <input type="text" id="txNote" maxlength="120" placeholder="Ej. Café con el equipo">
     </div>
