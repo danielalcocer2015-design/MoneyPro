@@ -128,6 +128,7 @@ a { color: var(--accent); }
 .tx-amount { font-weight: 800; font-size: 14.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tx-amount.income { color: var(--series-1); }
 .tx-amount.expense { color: var(--text-primary); }
+.tx-amount.multi-currency { font-size: 11.5px; white-space: normal; text-align: right; line-height: 1.4; }
 .tx-source { font-size: 10px; opacity: 0.7; }
 
 .empty-hint { text-align: center; color: var(--text-muted); font-size: 13.5px; padding: 24px 12px; line-height: 1.5; }
@@ -210,6 +211,7 @@ a { color: var(--accent); }
 .emoji-picker button:hover { background: var(--surface-2); }
 .cat-add-row { display: flex; gap: 8px; }
 .cat-add-input { flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; color: var(--text-primary); font-size: 13.5px; min-width: 0; }
+.acct-add-currency { flex: none; width: 92px; padding: 9px 6px; font-size: 12px; }
 
 /* ---------- Cuentas ---------- */
 .acct-summary { display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left; background: var(--surface-1); border: 1px solid var(--border); border-radius: 16px; padding: 16px; cursor: pointer; font-family: inherit; }
@@ -226,9 +228,10 @@ a { color: var(--accent); }
 .acct-row-balance.negative { color: var(--series-2); }
 .acct-default-btn { background: none; border: none; font-size: 16px; cursor: pointer; padding: 4px; flex-shrink: 0; opacity: 0.35; }
 .acct-default-btn.active { opacity: 1; }
-.acct-row-sub { display: flex; align-items: center; gap: 8px; padding-left: 30px; }
+.acct-row-sub { display: flex; align-items: center; gap: 8px; padding-left: 30px; flex-wrap: wrap; }
 .acct-balance-input { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; color: var(--text-primary); font-size: 12px; width: 110px; }
 .acct-balance-label { font-size: 11px; color: var(--text-muted); }
+.acct-currency-select { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 5px 6px; color: var(--text-primary); font-size: 11px; width: 78px; }
 
 /* ---------- Presupuesto ---------- */
 .budget-list { display: flex; flex-direction: column; gap: 10px; }

@@ -2,6 +2,7 @@ import { firebaseConfig, firebaseEnabled } from './firebase-config.js';
 import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_INCOME_CATEGORIES, FALLBACK_ID, defaultCategoryDoc, slugify, findCategory } from './categories.js';
 import { defaultAccountDoc, slugifyAccount, allAccounts, transactableAccounts, findAccount, defaultAccountId } from './accounts.js';
 import { BUDGET_PERIODS, DEFAULT_BUDGET_PERIOD, monthlyEquivalent, defaultBudgetDoc } from './budgets.js';
+import { FIAT_CURRENCIES, CRYPTO_CURRENCIES, DEFAULT_CURRENCY, currencyLabel, isCrypto, coingeckoId } from './currencies.js';
 import { renderDonutChart, renderBarChart } from './charts.js';
 
 const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/10.13.0';
@@ -16,7 +17,8 @@ const state = {
   categories: defaultCategoryDoc(), // { expense: [...], income: [...] } — personalizable por usuario
   accounts: defaultAccountDoc(),    // { corriente: [...], credito: [...] } — personalizable por usuario
   budgets: defaultBudgetDoc(),      // { [categoriaId]: { amount, period } } — presupuesto por categoría de gasto
-  txs: [],           // { id, amount, type, category, subcategory, accountId, fromAccountId, toAccountId, note, date, source }
+  rates: { fiat: {}, crypto: {}, fetchedAt: 0 }, // tipo de cambio en vivo — ver refreshRates/convertAmount
+  txs: [],           // { id, amount, type, category, subcategory, accountId, fromAccountId, toAccountId, toAmount, note, date, source }
   view: 'inicio',
   selectedAccountId: null, // cuenta que se está viendo en el detalle (vista "cuenta-detalle")
   filterMonth: '',
@@ -59,7 +61,12 @@ function accountsList() {
   return transactableAccounts(state.accounts);
 }
 function accountInfo(id) {
-  return findAccount(state.accounts, id) || { id, name: id ? 'Cuenta eliminada' : 'Sin cuenta', icon: '❔', kind: 'corriente' };
+  return findAccount(state.accounts, id) || { id, name: id ? 'Cuenta eliminada' : 'Sin cuenta', icon: '❔', kind: 'corriente', currency: state.currency };
+}
+// Moneda nativa de una cuenta (las creadas antes de esta función no
+// tenían "currency" — se asume que están en la moneda principal).
+function accountCurrency(id) {
+  return accountInfo(id).currency || state.currency || 'MXN';
 }
 function currentDefaultAccountId() {
   return defaultAccountId(state.accounts);
@@ -71,7 +78,9 @@ function currentDefaultAccountId() {
 function budgetSpentForCategory(categoryId, key) {
   let spent = 0;
   for (const t of state.txs) {
-    if (t.type === 'expense' && t.category === categoryId && monthKey(t.date) === key) spent += t.amount;
+    if (t.type === 'expense' && t.category === categoryId && monthKey(t.date) === key) {
+      spent += convertAmount(t.amount, t.accountId ? accountCurrency(t.accountId) : state.currency, state.currency);
+    }
   }
   return spent;
 }
@@ -91,11 +100,102 @@ function monthLabel(key) {
   const label = d.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
-function formatMoney(amount) {
+// Si no se pasa "currency", usa la moneda principal del usuario (la de
+// Ajustes) — así los totales que combinan varias cuentas (Patrimonio,
+// Presupuesto, Análisis…) no cambian ninguno de sus llamados. Para
+// mostrar el saldo NATIVO de una cuenta se pasa su propia moneda.
+function formatMoney(amount, currency) {
+  const code = currency || state.currency || 'MXN';
+  if (isCrypto(code)) {
+    const num = Number(amount) || 0;
+    const decimals = Math.abs(num) > 0 && Math.abs(num) < 1 ? 6 : 2;
+    return `${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: decimals })} ${code}`;
+  }
   try {
-    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: state.currency || 'MXN', maximumFractionDigits: 2 }).format(amount || 0);
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: code, maximumFractionDigits: 2 }).format(amount || 0);
   } catch {
-    return `$${(amount || 0).toFixed(2)}`;
+    return `${code} ${(amount || 0).toFixed(2)}`;
+  }
+}
+
+// Lista de monedas para cualquier <select> de moneda (principal en
+// Ajustes, o la de una cuenta individual) — agrupada fiat/cripto.
+function currencyOptionsHtml(selected) {
+  const opt = (c) => `<option value="${c.code}"${c.code === selected ? ' selected' : ''}>${c.code} — ${c.name}</option>`;
+  return `<optgroup label="Monedas">${FIAT_CURRENCIES.map(opt).join('')}</optgroup>`
+    + `<optgroup label="Criptomonedas">${CRYPTO_CURRENCIES.map(opt).join('')}</optgroup>`;
+}
+function populateCurrencySelect(select, selected) {
+  if (!select) return;
+  select.innerHTML = currencyOptionsHtml(selected || state.currency || 'MXN');
+}
+
+// ---------------------------------------------------------------------
+// Tipo de cambio en vivo (fiat vía Frankfurter.app, cripto vía CoinGecko)
+// ---------------------------------------------------------------------
+// Todo se pivotea por USD: Frankfurter da "unidades de X por 1 USD" con
+// from=USD (coincide exacto con lo que guardamos), CoinGecko da "precio
+// en USD por 1 unidad" de cada cripto. Así convertir entre CUALQUIER par
+// (ej. BTC -> MXN) solo necesita las dos tablas, sin pedir cada par.
+const RATES_CACHE_KEY = 'moneypro_rates_cache';
+const RATES_MAX_AGE_MS = 60 * 60 * 1000; // 1 hora
+
+function loadCachedRates() {
+  try {
+    const raw = localStorage.getItem(RATES_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && parsed.fiat && parsed.crypto) return parsed;
+  } catch { /* caché corrupto — seguimos con el valor por defecto */ }
+  return { fiat: {}, crypto: {}, fetchedAt: 0 };
+}
+function saveCachedRates(rates) {
+  try { localStorage.setItem(RATES_CACHE_KEY, JSON.stringify(rates)); } catch { /* localStorage lleno o no disponible — no es crítico */ }
+}
+
+// USD que vale 1 unidad de `code` (para pivotear la conversión).
+function rateToUSD(code) {
+  if (code === 'USD') return 1;
+  const cgId = coingeckoId(code);
+  if (cgId) return state.rates.crypto[cgId] || null;
+  const perUsd = state.rates.fiat[code];
+  return perUsd ? 1 / perUsd : null;
+}
+
+function convertAmount(amount, fromCode, toCode) {
+  const num = Number(amount) || 0;
+  const from = fromCode || state.currency;
+  const to = toCode || state.currency;
+  if (!num || from === to) return num;
+  const fromUsd = rateToUSD(from);
+  const toUsd = rateToUSD(to);
+  // Sin tasa disponible (aún no cargó, o código desconocido): mejor
+  // devolver el número tal cual que romper o esconder el movimiento.
+  if (!fromUsd || !toUsd) return num;
+  return (num * fromUsd) / toUsd;
+}
+
+async function refreshRates(force = false) {
+  if (!force && Date.now() - state.rates.fetchedAt < RATES_MAX_AGE_MS) return;
+  try {
+    const cryptoIds = CRYPTO_CURRENCIES.map((c) => c.id).join(',');
+    const [fiatRes, cryptoRes] = await Promise.all([
+      fetch('https://api.frankfurter.app/latest?from=USD').then((r) => r.json()),
+      fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${cryptoIds}&vs_currencies=usd`).then((r) => r.json()),
+    ]);
+    const fiat = { USD: 1, ...(fiatRes?.rates || {}) };
+    const crypto = {};
+    for (const c of CRYPTO_CURRENCIES) {
+      const price = cryptoRes?.[c.id]?.usd;
+      if (price) crypto[c.id] = price;
+    }
+    state.rates = { fiat, crypto, fetchedAt: Date.now() };
+    saveCachedRates(state.rates);
+    if (state.user || state.demo) renderAll();
+  } catch (err) {
+    // Sin internet o el servicio falló: seguimos con lo que haya en
+    // caché (o sin convertir, si nunca se consiguió nada) — nunca
+    // bloqueamos la app por esto.
+    console.error('No se pudo actualizar el tipo de cambio', err);
   }
 }
 function formatDateShort(dateStr) {
@@ -618,7 +718,7 @@ async function persistAccounts(newAccounts) {
   renderAll();
 }
 
-async function addAccount(kind, name) {
+async function addAccount(kind, name, currency) {
   const trimmed = (name || '').trim();
   if (!trimmed) return;
   const list = currentAccountList(kind);
@@ -636,8 +736,14 @@ async function addAccount(kind, name) {
       id, name: trimmed, kind, initialBalance: 0,
       icon: kind === 'credito' ? '💳' : isAsset ? '📦' : '💵',
       isDefault: !isAsset && !hasAnyAccount,
+      currency: currency || state.currency || 'MXN',
     }],
   };
+  await persistAccounts(updated);
+}
+
+async function setAccountCurrency(kind, id, currency) {
+  const updated = { ...state.accounts, [kind]: currentAccountList(kind).map((a) => (a.id === id ? { ...a, currency } : a)) };
   await persistAccounts(updated);
 }
 
@@ -748,8 +854,11 @@ function totalsForMonth(key) {
   let income = 0, expense = 0;
   for (const t of state.txs) {
     if (monthKey(t.date) !== key) continue;
-    if (t.type === 'income') income += t.amount;
-    else if (t.type === 'expense') expense += t.amount;
+    // Cada movimiento está en la moneda de SU cuenta — para sumarlos hay
+    // que convertirlos a la moneda principal (ver convertAmount).
+    const amt = convertAmount(t.amount, t.accountId ? accountCurrency(t.accountId) : state.currency, state.currency);
+    if (t.type === 'income') income += amt;
+    else if (t.type === 'expense') expense += amt;
     // Las transferencias mueven dinero entre tus propias cuentas — no son
     // ingreso ni gasto real, así que no cuentan en el balance del mes.
   }
@@ -766,7 +875,10 @@ function accountBalance(id) {
   for (const t of state.txs) {
     if (t.type === 'transfer') {
       if (t.fromAccountId === id) balance -= t.amount;
-      if (t.toAccountId === id) balance += t.amount;
+      // toAmount queda congelado al momento de la transferencia si las
+      // cuentas tenían distinta moneda (ver handleTxSave) — si no, es el
+      // mismo monto.
+      if (t.toAccountId === id) balance += (t.toAmount ?? t.amount);
     } else if (t.accountId === id) {
       if (t.type === 'income') balance += t.amount;
       else if (t.type === 'expense') balance -= t.amount;
@@ -782,13 +894,19 @@ function renderTxRow(t) {
   if (t.type === 'transfer') {
     const from = accountInfo(t.fromAccountId);
     const to = accountInfo(t.toAccountId);
+    const fromCur = from.currency || state.currency;
+    const toCur = to.currency || state.currency;
+    const sameCurrency = fromCur === toCur;
+    const amountHtml = sameCurrency
+      ? formatMoney(t.amount, fromCur)
+      : `${formatMoney(t.amount, fromCur)} → ${formatMoney(t.toAmount ?? t.amount, toCur)}`;
     row.innerHTML = `
       <div class="tx-icon">🔁</div>
       <div class="tx-info">
         <div class="tx-cat">${escapeHtml(from.name)} → ${escapeHtml(to.name)}</div>
         <div class="tx-meta">${formatDateShort(t.date)}${t.note ? ' · ' + escapeHtml(t.note) : ''}</div>
       </div>
-      <div class="tx-amount">${formatMoney(t.amount)}</div>
+      <div class="tx-amount${sameCurrency ? '' : ' multi-currency'}">${amountHtml}</div>
     `;
     row.addEventListener('click', () => openTxModal(t));
     return row;
@@ -798,13 +916,14 @@ function renderTxRow(t) {
   const sub = t.subcategory ? (info.subcategories || []).find((s) => s.id === t.subcategory) : null;
   const catLabel = sub ? `${info.label} · ${sub.label}` : info.label;
   const acctLabel = t.accountId ? accountInfo(t.accountId).name : '';
+  const txCurrency = t.accountId ? accountCurrency(t.accountId) : state.currency;
   row.innerHTML = `
     <div class="tx-icon">${info.icon}</div>
     <div class="tx-info">
       <div class="tx-cat">${escapeHtml(catLabel)}</div>
       <div class="tx-meta">${formatDateShort(t.date)}${acctLabel ? ' · ' + escapeHtml(acctLabel) : ''}${t.note ? ' · ' + escapeHtml(t.note) : ''}${t.source === 'shortcut' ? ' · ⚡ atajo' : ''}</div>
     </div>
-    <div class="tx-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${formatMoney(t.amount)}</div>
+    <div class="tx-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${formatMoney(t.amount, txCurrency)}</div>
   `;
   row.addEventListener('click', () => openTxModal(t));
   return row;
@@ -864,7 +983,7 @@ function renderAccountDetail() {
   const acct = accountInfo(state.selectedAccountId);
   $('#acctDetailLabel').textContent = `${acct.icon} ${acct.name}`;
   const balance = accountBalance(state.selectedAccountId);
-  $('#acctDetailBalance').textContent = formatMoney(acct.kind === 'credito' ? -balance : balance);
+  $('#acctDetailBalance').textContent = formatMoney(acct.kind === 'credito' ? -balance : balance, acct.currency);
 
   const monthSel = $('#acctDetailFilterMonth');
   const months = distinctMonths();
@@ -896,7 +1015,8 @@ function renderAnalisis() {
   const byCat = {};
   for (const t of state.txs) {
     if (t.type !== 'expense' || monthKey(t.date) !== state.analisisMonth) continue;
-    byCat[t.category] = (byCat[t.category] || 0) + t.amount;
+    const amt = convertAmount(t.amount, t.accountId ? accountCurrency(t.accountId) : state.currency, state.currency);
+    byCat[t.category] = (byCat[t.category] || 0) + amt;
   }
   const donutData = categoriesFor('expense')
     .map((c, i) => ({ id: c.id, label: c.label, icon: c.icon, value: byCat[c.id] || 0, seriesIndex: i }))
@@ -965,7 +1085,7 @@ function renderSettings() {
   $('#accountEmail').textContent = state.demo ? 'Modo demostración' : (state.user?.email || '—');
   $('#logoutBtn').hidden = state.demo;
   $('#demoUpgradeBtn').hidden = !state.demo;
-  $('#currencySelect').value = state.currency;
+  populateCurrencySelect($('#currencySelect'), state.currency);
 
   const tokenAvailable = !state.demo && !!state.webhookToken;
   // Token completo (sin enmascarar): hay que poder copiarlo tal cual para
@@ -1128,7 +1248,7 @@ function renderAccountRow(kind, acct) {
   const balance = accountBalance(acct.id);
   const balanceEl = document.createElement('span');
   balanceEl.className = 'acct-row-balance' + (balance < 0 ? ' negative' : '');
-  balanceEl.textContent = formatMoney(kind === 'credito' ? -balance : balance);
+  balanceEl.textContent = formatMoney(kind === 'credito' ? -balance : balance, acct.currency);
 
   const delBtn = document.createElement('button');
   delBtn.type = 'button';
@@ -1163,7 +1283,12 @@ function renderAccountRow(kind, acct) {
   balInput.className = 'acct-balance-input';
   balInput.value = acct.initialBalance || 0;
   balInput.addEventListener('change', () => setAccountInitialBalance(kind, acct.id, balInput.value));
-  sub.append(balLabel, balInput);
+  const currencySelect = document.createElement('select');
+  currencySelect.className = 'acct-currency-select';
+  currencySelect.title = 'Moneda de esta cuenta';
+  populateCurrencySelect(currencySelect, acct.currency);
+  currencySelect.addEventListener('change', () => setAccountCurrency(kind, acct.id, currencySelect.value));
+  sub.append(balLabel, balInput, currencySelect);
   row.appendChild(sub);
 
   return row;
@@ -1174,9 +1299,12 @@ function renderAccountRow(kind, acct) {
 // de Cuentas y el modal de Activos/Pasivos, todos parten de este mismo
 // cálculo para no desincronizarse entre sí.
 function computeAccountTotals() {
-  const corrienteTotal = currentAccountList('corriente').reduce((sum, a) => sum + accountBalance(a.id), 0);
-  const creditoTotal = currentAccountList('credito').reduce((sum, a) => sum - accountBalance(a.id), 0);
-  const activoTotal = currentAccountList('activo').reduce((sum, a) => sum + accountBalance(a.id), 0);
+  // Cada cuenta puede estar en una moneda distinta — convertimos cada
+  // saldo a la moneda principal (state.currency) antes de sumar.
+  const toBase = (a) => convertAmount(accountBalance(a.id), a.currency || state.currency, state.currency);
+  const corrienteTotal = currentAccountList('corriente').reduce((sum, a) => sum + toBase(a), 0);
+  const creditoTotal = currentAccountList('credito').reduce((sum, a) => sum - toBase(a), 0);
+  const activoTotal = currentAccountList('activo').reduce((sum, a) => sum + toBase(a), 0);
   return { corrienteTotal, creditoTotal, activoTotal };
 }
 
@@ -1185,6 +1313,11 @@ function renderAccountsAdmin() {
   const creditoList = $('#creditoAcctList');
   const activoList = $('#activoAcctList');
   if (!corrienteList || !creditoList || !activoList) return;
+  // Selects de moneda de las filas "+ Agregar" — se llenan una sola vez
+  // (si ya tienen opciones no los tocamos, para no perder lo elegido).
+  if (!$('#corrienteAcctCurrencyInput').options.length) populateCurrencySelect($('#corrienteAcctCurrencyInput'), state.currency);
+  if (!$('#creditoAcctCurrencyInput').options.length) populateCurrencySelect($('#creditoAcctCurrencyInput'), state.currency);
+  if (!$('#activoAcctCurrencyInput').options.length) populateCurrencySelect($('#activoAcctCurrencyInput'), state.currency);
   corrienteList.innerHTML = '';
   creditoList.innerHTML = '';
   activoList.innerHTML = '';
@@ -1462,6 +1595,7 @@ function updateTxFieldVisibility() {
   $('#txFromAccountField').hidden = !isTransfer;
   $('#txToAccountField').hidden = !isTransfer;
   $('#txAssetNameField').hidden = !isAccountType;
+  if (isAccountType && !$('#txAssetCurrency').options.length) populateCurrencySelect($('#txAssetCurrency'), state.currency);
   $('#txDateRow').hidden = isAccountType;
   $('#txNoteField').hidden = isAccountType;
   $('#txAmountLabel').textContent = state.txType === 'activo' ? 'Valor' : state.txType === 'pasivo' ? 'Deuda' : 'Monto';
@@ -1531,7 +1665,7 @@ async function handleTxSave() {
       return;
     }
     try {
-      await addAccount(kind, name);
+      await addAccount(kind, name, $('#txAssetCurrency').value);
       await setAccountInitialBalance(kind, id, amount);
       closeTxModal();
     } catch {
@@ -1556,7 +1690,13 @@ async function handleTxSave() {
       $('#txError').hidden = false;
       return;
     }
-    data = { amount, type: 'transfer', fromAccountId: state.txFromAccount, toAccountId: state.txToAccount, date, note };
+    // Si origen y destino están en distinta moneda, el monto que llega al
+    // destino se convierte y se "congela" al momento de guardar (no se
+    // recalcula después aunque cambie el tipo de cambio).
+    const fromCur = accountCurrency(state.txFromAccount);
+    const toCur = accountCurrency(state.txToAccount);
+    const toAmount = fromCur === toCur ? amount : Math.round(convertAmount(amount, fromCur, toCur) * 100) / 100;
+    data = { amount, toAmount, type: 'transfer', fromAccountId: state.txFromAccount, toAccountId: state.txToAccount, date, note };
   } else {
     data = { amount, type: state.txType, category: state.txCategory, subcategory: state.txSubcategory || '', accountId: state.txAccount || '', date, note };
   }
@@ -1773,18 +1913,18 @@ function wireEvents() {
   $('#incomeCatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#incomeCatAddBtn').click(); });
 
   $('#corrienteAcctAddBtn').addEventListener('click', () => {
-    addAccount('corriente', $('#corrienteAcctInput').value);
+    addAccount('corriente', $('#corrienteAcctInput').value, $('#corrienteAcctCurrencyInput').value);
     $('#corrienteAcctInput').value = '';
   });
   $('#corrienteAcctInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#corrienteAcctAddBtn').click(); });
   $('#creditoAcctAddBtn').addEventListener('click', () => {
-    addAccount('credito', $('#creditoAcctInput').value);
+    addAccount('credito', $('#creditoAcctInput').value, $('#creditoAcctCurrencyInput').value);
     $('#creditoAcctInput').value = '';
   });
   $('#creditoAcctInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#creditoAcctAddBtn').click(); });
 
   $('#activoAcctAddBtn').addEventListener('click', () => {
-    addAccount('activo', $('#activoAcctInput').value);
+    addAccount('activo', $('#activoAcctInput').value, $('#activoAcctCurrencyInput').value);
     $('#activoAcctInput').value = '';
   });
   $('#activoAcctInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#activoAcctAddBtn').click(); });
@@ -1882,6 +2022,10 @@ function registerServiceWorker() {
 
 function init() {
   initTheme();
+  state.rates = loadCachedRates();
+  // El tipo de cambio es público — no depende de sesión ni de Firebase,
+  // así que se consulta siempre (incluso en modo demostración).
+  refreshRates().catch(() => {});
   wireEvents();
   registerServiceWorker();
   $('#firebaseDisabledHint').hidden = firebaseEnabled;

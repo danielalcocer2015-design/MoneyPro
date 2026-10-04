@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="icons/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=2">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 
@@ -114,6 +114,7 @@
         <div class="cat-list" id="corrienteAcctList"></div>
         <div class="cat-add-row">
           <input type="text" class="cat-add-input" id="corrienteAcctInput" placeholder="Nueva cuenta…" maxlength="30">
+          <select class="select-field acct-add-currency" id="corrienteAcctCurrencyInput"></select>
           <button class="chip-btn" id="corrienteAcctAddBtn">+ Agregar</button>
         </div>
       </div>
@@ -127,6 +128,7 @@
         <div class="cat-list" id="creditoAcctList"></div>
         <div class="cat-add-row">
           <input type="text" class="cat-add-input" id="creditoAcctInput" placeholder="Ej. Tarjeta Nu, Préstamo…" maxlength="30">
+          <select class="select-field acct-add-currency" id="creditoAcctCurrencyInput"></select>
           <button class="chip-btn" id="creditoAcctAddBtn">+ Agregar</button>
         </div>
       </div>
@@ -139,6 +141,7 @@
         <div class="cat-list" id="activoAcctList"></div>
         <div class="cat-add-row">
           <input type="text" class="cat-add-input" id="activoAcctInput" placeholder="Ej. Mi coche, Acciones…" maxlength="30">
+          <select class="select-field acct-add-currency" id="activoAcctCurrencyInput"></select>
           <button class="chip-btn" id="activoAcctAddBtn">+ Agregar</button>
         </div>
       </div>
@@ -179,11 +182,7 @@
             <div class="settings-row-title" id="accountEmail">—</div>
             <div class="settings-row-sub">Moneda</div>
           </div>
-          <select class="select-field" id="currencySelect">
-            <option value="MXN">MXN — Peso mexicano</option>
-            <option value="USD">USD — Dólar</option>
-            <option value="EUR">EUR — Euro</option>
-          </select>
+          <select class="select-field" id="currencySelect"></select>
         </div>
         <button class="btn-secondary full" id="logoutBtn">Cerrar sesión</button>
         <button class="btn-primary full" id="demoUpgradeBtn" hidden>Crear cuenta para guardar tus datos</button>
@@ -343,6 +342,8 @@
     <div class="field" id="txAssetNameField" hidden>
       <label for="txAssetName">Nombre</label>
       <input type="text" id="txAssetName" maxlength="30" placeholder="Ej. Mi coche, Acciones…">
+      <label for="txAssetCurrency">Moneda</label>
+      <select class="select-field" id="txAssetCurrency"></select>
     </div>
     <div class="field">
       <label for="txAmount" id="txAmountLabel">Monto</label>
@@ -399,6 +400,6 @@
 
 <div class="save-indicator" id="saveIndicator"><div class="save-dot"></div><span id="saveLabel">Guardado</span></div>
 
-<script type="module" src="app.js?v=2"></script>
+<script type="module" src="app.js?v=3"></script>
 </body>
 </html>
