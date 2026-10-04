@@ -643,7 +643,7 @@ async function persistCategories(newCategories) {
     await fb.fs.setDoc(fb.fs.doc(fb.db, 'users', state.user.uid, 'meta', 'categories'), newCategories);
     await syncCatListToRtdb();
   }
-  renderCategoriesAdmin();
+  refreshTxCategoryUI();
   renderAll();
 }
 
@@ -1107,8 +1107,6 @@ function renderSettings() {
   $('#copyTransferBodyBtn').disabled = !tokenAvailable;
   $('#regenTokenBtn').disabled = state.demo;
   $('#demoTokenHint').hidden = !state.demo;
-
-  renderCategoriesAdmin();
 }
 
 const EMOJI_PRESET = ['🍔', '🚗', '🏠', '🎬', '💊', '💡', '🛍️', '📚', '✈️', '🎁', '💼', '💻', '📈', '⛽', '🔧', '💰', '🐾', '🏋️', '🎮', '☕'];
@@ -1195,14 +1193,33 @@ function renderCategoryRow(type, cat) {
   return row;
 }
 
-function renderCategoriesAdmin() {
-  const expenseList = $('#expenseCatList');
-  const incomeList = $('#incomeCatList');
-  if (!expenseList || !incomeList) return;
-  expenseList.innerHTML = '';
-  incomeList.innerHTML = '';
-  categoriesFor('expense').forEach((c) => expenseList.appendChild(renderCategoryRow('expense', c)));
-  categoriesFor('income').forEach((c) => incomeList.appendChild(renderCategoryRow('income', c)));
+// Las categorías ya no se editan desde Ajustes — se editan dentro del
+// modal del + (botón "✏️ Editar" junto al grid de categorías), para el
+// tipo de movimiento que tengas abierto en ese momento (gasto o ingreso).
+function renderTxCategoryEditor() {
+  const list = $('#txCategoryEditList');
+  if (!list || isAccountCreationType(state.txType) || state.txType === 'transfer') return;
+  list.innerHTML = '';
+  currentCategoryList(state.txType).forEach((c) => list.appendChild(renderCategoryRow(state.txType, c)));
+}
+
+// Refresca el grid de selección y (si está abierto) el editor, para que
+// un alta/borrado/cambio de categoría se refleje al instante en el modal.
+function refreshTxCategoryUI() {
+  if (state.txType === 'transfer' || isAccountCreationType(state.txType)) return;
+  buildCategoryGrid();
+  buildSubcategoryGrid();
+  renderTxCategoryEditor();
+}
+
+let txCategoryEditMode = false;
+function setTxCategoryEditMode(on) {
+  txCategoryEditMode = on;
+  $('#txCategoryGrid').hidden = on;
+  $('#txCategoryEditList').hidden = !on;
+  $('#txCategoryAddRow').hidden = !on;
+  $('#txCatEditToggle').textContent = on ? '✓ Listo' : '✏️ Editar';
+  if (on) renderTxCategoryEditor();
 }
 
 const ACCOUNT_EMOJI_PRESET = ['💵', '💳', '🏦', '💰', '👛', '🐷', '💷', '💶', '💴', '📱', '🪙', '💎', '🏧', '📈', '🚗', '🏠', '🏞️', '📦'];
@@ -1643,6 +1660,7 @@ function openTxModal(tx = null) {
   $('#txError').hidden = true;
   $('#txDelete').hidden = !tx;
   $$('#txTypeToggle button').forEach((b) => b.classList.toggle('active', b.dataset.type === state.txType));
+  setTxCategoryEditMode(false);
   updateTxFieldVisibility();
   if (state.txType === 'transfer') {
     buildTransferGrids();
@@ -1805,6 +1823,7 @@ function wireEvents() {
     state.txType = b.dataset.type;
     $$('#txTypeToggle button').forEach((x) => x.classList.remove('active'));
     b.classList.add('active');
+    setTxCategoryEditMode(false);
     updateTxFieldVisibility();
     const titles = { activo: 'Nuevo activo', pasivo: 'Nuevo pasivo' };
     $('#txModalTitle').textContent = state.editingTxId ? 'Editar movimiento' : (titles[state.txType] || 'Nuevo movimiento');
@@ -1929,16 +1948,12 @@ function wireEvents() {
     await regenerateToken();
   });
 
-  $('#expenseCatAddBtn').addEventListener('click', () => {
-    addCategory('expense', $('#expenseCatInput').value);
-    $('#expenseCatInput').value = '';
+  $('#txCatEditToggle').addEventListener('click', () => setTxCategoryEditMode(!txCategoryEditMode));
+  $('#txCategoryAddBtn').addEventListener('click', () => {
+    addCategory(state.txType, $('#txCategoryAddInput').value);
+    $('#txCategoryAddInput').value = '';
   });
-  $('#expenseCatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#expenseCatAddBtn').click(); });
-  $('#incomeCatAddBtn').addEventListener('click', () => {
-    addCategory('income', $('#incomeCatInput').value);
-    $('#incomeCatInput').value = '';
-  });
-  $('#incomeCatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#incomeCatAddBtn').click(); });
+  $('#txCategoryAddInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#txCategoryAddBtn').click(); });
 
   $('#corrienteAcctAddBtn').addEventListener('click', () => {
     addAccount('corriente', $('#corrienteAcctInput').value, $('#corrienteAcctCurrencyInput').value);

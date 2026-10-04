@@ -196,25 +196,6 @@
         </div>
       </div>
 
-      <div class="settings-block categories-block">
-        <h3>Categorías</h3>
-        <p class="settings-hint">Agrega, renombra o borra tus categorías y subcategorías. La categoría se puede elegir en vivo desde el atajo — no hace falta reconfigurarlo cuando agregas una nueva.</p>
-
-        <div class="cat-type-head">Gastos</div>
-        <div class="cat-list" id="expenseCatList"></div>
-        <div class="cat-add-row">
-          <input type="text" class="cat-add-input" id="expenseCatInput" placeholder="Nueva categoría de gasto…" maxlength="30">
-          <button class="chip-btn" id="expenseCatAddBtn">+ Agregar</button>
-        </div>
-
-        <div class="cat-type-head">Ingresos</div>
-        <div class="cat-list" id="incomeCatList"></div>
-        <div class="cat-add-row">
-          <input type="text" class="cat-add-input" id="incomeCatInput" placeholder="Nueva categoría de ingreso…" maxlength="30">
-          <button class="chip-btn" id="incomeCatAddBtn">+ Agregar</button>
-        </div>
-      </div>
-
       <div class="settings-block shortcut-block">
         <h3>⚡ Atajo para añadir gastos sin abrir la app</h3>
         <p class="settings-hint">Crea un botón en tu iPhone o Android que registra un gasto al instante — desde la pantalla de inicio, Siri, o un widget. No necesitas abrir MoneyPro. Los gastos del atajo se ven en tus movimientos la próxima vez que abras sesión (se sincronizan solos).</p>
@@ -353,8 +334,16 @@
       </div>
     </div>
     <div class="field" id="txCategoryField">
-      <label>Categoría</label>
+      <div class="section-head">
+        <label>Categoría</label>
+        <button type="button" class="link-btn" id="txCatEditToggle">✏️ Editar</button>
+      </div>
       <div class="category-grid" id="txCategoryGrid"></div>
+      <div class="cat-list" id="txCategoryEditList" hidden></div>
+      <div class="cat-add-row" id="txCategoryAddRow" hidden>
+        <input type="text" class="cat-add-input" id="txCategoryAddInput" placeholder="Nueva categoría…" maxlength="30">
+        <button class="chip-btn" id="txCategoryAddBtn">+ Agregar</button>
+      </div>
     </div>
     <div class="field" id="txSubcategoryField" hidden>
       <label>Subcategoría (opcional)</label>
@@ -403,6 +392,6 @@
 
 <div class="save-indicator" id="saveIndicator"><div class="save-dot"></div><span id="saveLabel">Guardado</span></div>
 
-<script type="module" src="app.js?v=3"></script>
+<script type="module" src="app.js?v=4"></script>
 </body>
 </html>
