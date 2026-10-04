@@ -917,13 +917,20 @@ function renderTxRow(t) {
   const catLabel = sub ? `${info.label} · ${sub.label}` : info.label;
   const acctLabel = t.accountId ? accountInfo(t.accountId).name : '';
   const txCurrency = t.accountId ? accountCurrency(t.accountId) : state.currency;
+  const sign = t.type === 'income' ? '+' : '-';
+  // Si se tecleó el monto en otra moneda (ver handleTxSave), se muestran
+  // ambos: el original y en el que quedó convertida la cuenta.
+  const hasOriginal = t.originalCurrency && t.originalCurrency !== txCurrency;
+  const amountHtml = hasOriginal
+    ? `${sign}${formatMoney(t.originalAmount ?? t.amount, t.originalCurrency)} → ${sign}${formatMoney(t.amount, txCurrency)}`
+    : `${sign}${formatMoney(t.amount, txCurrency)}`;
   row.innerHTML = `
     <div class="tx-icon">${info.icon}</div>
     <div class="tx-info">
       <div class="tx-cat">${escapeHtml(catLabel)}</div>
       <div class="tx-meta">${formatDateShort(t.date)}${acctLabel ? ' · ' + escapeHtml(acctLabel) : ''}${t.note ? ' · ' + escapeHtml(t.note) : ''}${t.source === 'shortcut' ? ' · ⚡ atajo' : ''}</div>
     </div>
-    <div class="tx-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${formatMoney(t.amount, txCurrency)}</div>
+    <div class="tx-amount ${t.type}${hasOriginal ? ' multi-currency' : ''}">${amountHtml}</div>
   `;
   row.addEventListener('click', () => openTxModal(t));
   return row;
@@ -1543,6 +1550,7 @@ function buildAccountGrid() {
     state.txAccount = '';
     $$('.category-chip', grid).forEach((el) => el.classList.remove('active'));
     noneChip.classList.add('active');
+    populateCurrencySelect($('#txAmountCurrency'), accountCurrency(state.txAccount));
   });
   grid.appendChild(noneChip);
   accountsList().forEach((a) => {
@@ -1554,6 +1562,7 @@ function buildAccountGrid() {
       state.txAccount = a.id;
       $$('.category-chip', grid).forEach((el) => el.classList.remove('active'));
       chip.classList.add('active');
+      populateCurrencySelect($('#txAmountCurrency'), accountCurrency(state.txAccount));
     });
     grid.appendChild(chip);
   });
@@ -1590,12 +1599,18 @@ function isAccountCreationType(type) {
 function updateTxFieldVisibility() {
   const isTransfer = state.txType === 'transfer';
   const isAccountType = isAccountCreationType(state.txType);
+  // Ingreso/gasto: el monto se puede teclear en una moneda distinta a la
+  // de la cuenta (ej. pagaste algo en USD desde tu cuenta en MXN) — ver
+  // handleTxSave, que convierte y guarda la original para mostrarla.
+  const isAmountCurrencyType = !isTransfer && !isAccountType;
   $('#txCategoryField').hidden = isTransfer || isAccountType;
   $('#txAccountField').hidden = isTransfer || isAccountType;
   $('#txFromAccountField').hidden = !isTransfer;
   $('#txToAccountField').hidden = !isTransfer;
   $('#txAssetNameField').hidden = !isAccountType;
   if (isAccountType && !$('#txAssetCurrency').options.length) populateCurrencySelect($('#txAssetCurrency'), state.currency);
+  $('#txAmountCurrency').hidden = !isAmountCurrencyType;
+  if (isAmountCurrencyType) populateCurrencySelect($('#txAmountCurrency'), accountCurrency(state.txAccount));
   $('#txDateRow').hidden = isAccountType;
   $('#txNoteField').hidden = isAccountType;
   $('#txAmountLabel').textContent = state.txType === 'activo' ? 'Valor' : state.txType === 'pasivo' ? 'Deuda' : 'Monto';
@@ -1621,7 +1636,7 @@ function openTxModal(tx = null) {
 
   const titles = { activo: 'Nuevo activo', pasivo: 'Nuevo pasivo' };
   $('#txModalTitle').textContent = tx ? 'Editar movimiento' : (titles[state.txType] || 'Nuevo movimiento');
-  $('#txAmount').value = tx ? tx.amount : '';
+  $('#txAmount').value = tx ? (tx.originalAmount ?? tx.amount) : '';
   $('#txAssetName').value = '';
   $('#txDate').value = tx ? tx.date : todayISO();
   $('#txNote').value = tx?.note || '';
@@ -1635,6 +1650,9 @@ function openTxModal(tx = null) {
     buildCategoryGrid();
     buildSubcategoryGrid();
     buildAccountGrid();
+    // Al editar, respeta la moneda en la que se tecleó originalmente el
+    // monto (puede ser distinta a la de la cuenta — ver handleTxSave).
+    populateCurrencySelect($('#txAmountCurrency'), tx?.originalCurrency || accountCurrency(state.txAccount));
   }
   $('#txModalOverlay').classList.add('open');
 }
@@ -1698,7 +1716,17 @@ async function handleTxSave() {
     const toAmount = fromCur === toCur ? amount : Math.round(convertAmount(amount, fromCur, toCur) * 100) / 100;
     data = { amount, toAmount, type: 'transfer', fromAccountId: state.txFromAccount, toAccountId: state.txToAccount, date, note };
   } else {
-    data = { amount, type: state.txType, category: state.txCategory, subcategory: state.txSubcategory || '', accountId: state.txAccount || '', date, note };
+    // El monto se puede teclear en una moneda distinta a la de la cuenta
+    // (ej. pagaste $50 USD desde tu cuenta en MXN) — se guarda convertido
+    // a la moneda de la cuenta (así el saldo/los totales no cambian de
+    // lógica), y se conserva el original para mostrarlo en la fila.
+    const acctCur = accountCurrency(state.txAccount);
+    const originalCurrency = $('#txAmountCurrency').value || acctCur;
+    const storedAmount = originalCurrency === acctCur ? amount : Math.round(convertAmount(amount, originalCurrency, acctCur) * 100) / 100;
+    data = {
+      amount: storedAmount, originalAmount: amount, originalCurrency,
+      type: state.txType, category: state.txCategory, subcategory: state.txSubcategory || '', accountId: state.txAccount || '', date, note,
+    };
   }
 
   try {

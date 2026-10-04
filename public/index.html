@@ -347,7 +347,10 @@
     </div>
     <div class="field">
       <label for="txAmount" id="txAmountLabel">Monto</label>
-      <input type="number" id="txAmount" inputmode="decimal" step="0.01" min="0.01" placeholder="0.00">
+      <div class="amount-currency-row">
+        <input type="number" id="txAmount" inputmode="decimal" step="0.01" min="0.01" placeholder="0.00">
+        <select class="select-field" id="txAmountCurrency"></select>
+      </div>
     </div>
     <div class="field" id="txCategoryField">
       <label>Categoría</label>

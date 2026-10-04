@@ -286,6 +286,9 @@ a { color: var(--accent); }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .field label { font-size: 12.5px; font-weight: 700; color: var(--text-secondary); }
 .field input { background: var(--surface-2); border: 1px solid var(--border); color: var(--text-primary); border-radius: 12px; padding: 12px 14px; font-size: 15px; }
+.amount-currency-row { display: flex; gap: 8px; }
+.amount-currency-row input { flex: 1; min-width: 0; }
+.amount-currency-row .select-field { flex: none; width: 110px; }
 .field input:focus, .select-field:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .field-row { display: flex; gap: 10px; }
 .field-row .field { flex: 1; }
